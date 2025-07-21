@@ -1,1 +1,2 @@
 - Add list of ASINS so it's a scrollable select list when the script runs
+- Glance views adjusted BB

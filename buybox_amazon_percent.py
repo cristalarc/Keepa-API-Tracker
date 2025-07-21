@@ -86,14 +86,42 @@ df['month'] = df['datetime'].dt.month
 
 results = []
 for month in MONTHS:
-    month_df = df[(df['year'] == YEAR) & (df['month'] == month)]
-    if month_df.empty:
-        results.append({'month': month, 'amazon_percent': None, 'total_count': 0, 'amazon_count': 0})
+    month_df = df[(df['year'] == YEAR) & (df['month'] == month)].sort_values('datetime').reset_index(drop=True)
+    if month_df.empty or len(month_df) < 2:
+        results.append({
+            'month': month,
+            'amazon_percent_count': None,
+            'amazon_percent_time': None,
+            'total_count': 0,
+            'amazon_count': 0,
+            'amazon_time_minutes': None,
+            'total_time_minutes': None
+        })
         continue
+    # Count-based calculation
     amazon_count = (month_df['seller_id'] == AMAZON_SELLER_ID).sum()
     total_count = len(month_df)
-    percent = (amazon_count / total_count) * 100
-    results.append({'month': month, 'amazon_percent': percent, 'total_count': total_count, 'amazon_count': amazon_count})
+    percent_count = (amazon_count / total_count) * 100
+    # Time-based calculation
+    amazon_time = 0
+    total_time = 0
+    for i in range(len(month_df) - 1):
+        t1 = month_df.loc[i, 'datetime']
+        t2 = month_df.loc[i + 1, 'datetime']
+        delta = (t2 - t1).total_seconds() / 60  # minutes
+        total_time += delta
+        if month_df.loc[i, 'seller_id'] == AMAZON_SELLER_ID:
+            amazon_time += delta
+    percent_time = (amazon_time / total_time) * 100 if total_time > 0 else None
+    results.append({
+        'month': month,
+        'amazon_percent_count': percent_count,
+        'amazon_percent_time': percent_time,
+        'total_count': total_count,
+        'amazon_count': amazon_count,
+        'amazon_time_minutes': amazon_time,
+        'total_time_minutes': total_time
+    })
 
 # Show results in a dedicated tkinter window
 mouse_x, mouse_y = pyautogui.position()
@@ -111,28 +139,30 @@ output_lines = [f'ASIN: {ASIN} | Year: {YEAR}\n']
 for r in results:
     output_lines.append('-' * 40)
     output_lines.append(f'Month: {r["month"]:02d}')
-    if r['amazon_percent'] is None:
+    if r['amazon_percent_time'] is None:
         output_lines.append('No buybox data for this month.')
     else:
         output_lines.append(f'Amazon match count: {r["amazon_count"]} / {r["total_count"]}')
-        output_lines.append(f'Amazon held the buybox {r["amazon_percent"]:.2f}% of the time.')
+        output_lines.append(f'Amazon held the buybox (by count): {r["amazon_percent_count"]:.2f}%')
+        output_lines.append(f'Amazon held the buybox (by time): {r["amazon_percent_time"]:.2f}%')
+        output_lines.append(f'Amazon time held (min): {r["amazon_time_minutes"]:.2f} / {r["total_time_minutes"]:.2f}')
 output_lines.append('-' * 40)
 text.insert(tk.END, '\n'.join(output_lines))
 text.config(state=tk.DISABLED)
 
 # Ask user if they want to export the DataFrame
 def ask_export():
-    export = messagebox.askyesno('Export Data', 'Do you want to export the full DataFrame to a CSV file?', parent=result_root)
+    export = messagebox.askyesno('Export Data', 'Do you want to export the summary DataFrame to a CSV file?', parent=result_root)
     if export:
         save_path = filedialog.asksaveasfilename(
-            title='Save buybox history as CSV',
+            title='Save buybox summary as CSV',
             defaultextension='.csv',
             filetypes=[('CSV files', '*.csv'), ('All files', '*.*')],
             parent=result_root
         )
         if save_path:
-            df.to_csv(save_path, index=False)
-            messagebox.showinfo('Export', f'DataFrame saved to {save_path}', parent=result_root)
+            pd.DataFrame(results).to_csv(save_path, index=False)
+            messagebox.showinfo('Export', f'Summary DataFrame saved to {save_path}', parent=result_root)
         else:
             messagebox.showinfo('Export', 'No file selected. DataFrame not saved.', parent=result_root)
     else:
