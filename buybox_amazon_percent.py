@@ -12,21 +12,28 @@ AMAZON_SELLER_ID = 'ATVPDKIKX0DER'
 
 # --- Get user input via popup ---
 import tkinter as tk
-from tkinter import simpledialog, messagebox
+import pyautogui
+from screeninfo import get_monitors
+from tkinter import simpledialog, messagebox, filedialog
 
 def get_user_input():
+    mouse_x, mouse_y = pyautogui.position()
     root = tk.Tk()
-    root.withdraw()  # Hide main window
+    # Make the window tiny and position it at the mouse
+    root.geometry(f'1x1+{mouse_x}+{mouse_y}')
+    root.lift()
+    root.attributes('-topmost', True)
+    root.update()
     asin = simpledialog.askstring('Input', 'Enter ASIN:', parent=root)
     year = simpledialog.askinteger('Input', 'Enter Year (e.g. 2025):', parent=root)
     months_str = simpledialog.askstring('Input', 'Enter months as comma-separated numbers (e.g. 1,2,3):', parent=root)
     if not asin or not year or not months_str:
-        messagebox.showerror('Error', 'All fields are required.')
+        messagebox.showerror('Error', 'All fields are required.', parent=root)
         root.destroy()
         exit(1)
     months = [int(m.strip()) for m in months_str.split(',') if m.strip().isdigit() and 1 <= int(m.strip()) <= 12]
     if not months:
-        messagebox.showerror('Error', 'Invalid months input.')
+        messagebox.showerror('Error', 'Invalid months input.', parent=root)
         root.destroy()
         exit(1)
     root.destroy()
@@ -89,15 +96,19 @@ for month in MONTHS:
     results.append({'month': month, 'amazon_percent': percent, 'total_count': total_count, 'amazon_count': amazon_count})
 
 # Ask user if they want to export the DataFrame
+mouse_x, mouse_y = pyautogui.position()
 root = tk.Tk()
-root.withdraw()
-export = messagebox.askyesno('Export Data', 'Do you want to export the full DataFrame to a CSV file?')
+root.geometry(f'1x1+{mouse_x}+{mouse_y}')
+root.lift()
+root.attributes('-topmost', True)
+root.update()
+export = messagebox.askyesno('Export Data', 'Do you want to export the full DataFrame to a CSV file?', parent=root)
 if export:
-    from tkinter import filedialog
     save_path = filedialog.asksaveasfilename(
         title='Save buybox history as CSV',
         defaultextension='.csv',
-        filetypes=[('CSV files', '*.csv'), ('All files', '*.*')]
+        filetypes=[('CSV files', '*.csv'), ('All files', '*.*')],
+        parent=root
     )
     root.destroy()
     if save_path:
