@@ -19,15 +19,20 @@ def get_user_input():
     root.withdraw()  # Hide main window
     asin = simpledialog.askstring('Input', 'Enter ASIN:', parent=root)
     year = simpledialog.askinteger('Input', 'Enter Year (e.g. 2025):', parent=root)
-    month = simpledialog.askinteger('Input', 'Enter Month (1-12):', parent=root)
-    if not asin or not year or not month:
+    months_str = simpledialog.askstring('Input', 'Enter months as comma-separated numbers (e.g. 1,2,3):', parent=root)
+    if not asin or not year or not months_str:
         messagebox.showerror('Error', 'All fields are required.')
         root.destroy()
         exit(1)
+    months = [int(m.strip()) for m in months_str.split(',') if m.strip().isdigit() and 1 <= int(m.strip()) <= 12]
+    if not months:
+        messagebox.showerror('Error', 'Invalid months input.')
+        root.destroy()
+        exit(1)
     root.destroy()
-    return asin, year, month
+    return asin, year, months
 
-ASIN, YEAR, MONTH = get_user_input()
+ASIN, YEAR, MONTHS = get_user_input()
 
 # Fetch product data from Keepa
 url = 'https://api.keepa.com/product'
@@ -66,38 +71,40 @@ df = pd.DataFrame(records)
 df['year'] = df['datetime'].dt.year
 df['month'] = df['datetime'].dt.month
 
-# Ask user where to save the DataFrame as CSV
-from tkinter import filedialog
+# Filter for selected month/year
+
+results = []
+for month in MONTHS:
+    month_df = df[(df['year'] == YEAR) & (df['month'] == month)]
+    if month_df.empty:
+        print(f'No buybox data for {YEAR}-{month:02d}.')
+        results.append({'month': month, 'amazon_percent': None, 'total_count': 0, 'amazon_count': 0})
+        continue
+    amazon_count = (month_df['seller_id'] == AMAZON_SELLER_ID).sum()
+    total_count = len(month_df)
+    percent = (amazon_count / total_count) * 100
+    print(f'ASIN: {ASIN}\nMonth: {YEAR}-{month:02d}')
+    print(f'Amazon match count: {amazon_count} / {total_count}')
+    print(f'Amazon held the buybox {percent:.2f}% of the time.')
+    results.append({'month': month, 'amazon_percent': percent, 'total_count': total_count, 'amazon_count': amazon_count})
+
+# Ask user if they want to export the DataFrame
 root = tk.Tk()
 root.withdraw()
-save_path = filedialog.asksaveasfilename(
-    title='Save buybox history as CSV',
-    defaultextension='.csv',
-    filetypes=[('CSV files', '*.csv'), ('All files', '*.*')]
-)
-root.destroy()
-if save_path:
-    df.to_csv(save_path, index=False)
-    print(f'DataFrame saved to {save_path}')
+export = messagebox.askyesno('Export Data', 'Do you want to export the full DataFrame to a CSV file?')
+if export:
+    from tkinter import filedialog
+    save_path = filedialog.asksaveasfilename(
+        title='Save buybox history as CSV',
+        defaultextension='.csv',
+        filetypes=[('CSV files', '*.csv'), ('All files', '*.*')]
+    )
+    root.destroy()
+    if save_path:
+        df.to_csv(save_path, index=False)
+        print(f'DataFrame saved to {save_path}')
+    else:
+        print('No file selected. DataFrame not saved.')
 else:
-    print('No file selected. DataFrame not saved.')
-
-# Filter for selected month/year
-month_df = df[(df['year'] == YEAR) & (df['month'] == MONTH)]
-if month_df.empty:
-    print(f'No buybox data for {YEAR}-{MONTH:02d}.')
-    exit(1)
-
-# Debug: Show unique seller IDs and sample data
-print('Sample seller IDs in selected month:', month_df['seller_id'].head(10).tolist())
-print('Unique seller IDs in selected month:', month_df['seller_id'].unique())
-
-# Calculate % held by Amazon
-amazon_count = (month_df['seller_id'] == AMAZON_SELLER_ID).sum()
-total_count = len(month_df)
-percent = (amazon_count / total_count) * 100
-
-print(f'Amazon match count: {amazon_count} / {total_count}')
-
-print(f'ASIN: {ASIN}\nMonth: {YEAR}-{MONTH:02d}')
-print(f'Amazon held the buybox {percent:.2f}% of the time.')
+    root.destroy()
+    print('DataFrame export skipped.')
