@@ -126,7 +126,7 @@ for month in MONTHS:
 # Show results in a dedicated tkinter window
 mouse_x, mouse_y = pyautogui.position()
 result_root = tk.Tk()
-result_root.geometry(f'800x800+{mouse_x}+{mouse_y}')
+result_root.geometry(f'1000x1000+{mouse_x}+{mouse_y}')
 result_root.title('Buybox Analysis Results')
 result_root.lift()
 result_root.attributes('-topmost', True)
