@@ -32,7 +32,7 @@ def get_user_input():
     # Create the main input window
     root = tk.Tk()
     root.title("Keepa API Tracker - Input")
-    root.geometry(f'400x300+{mouse_x}+{mouse_y}')
+    root.geometry(f'400x350+{mouse_x}+{mouse_y}')
     root.lift()
     root.attributes('-topmost', True)
     root.resizable(False, False)
@@ -40,13 +40,14 @@ def get_user_input():
     # Center the window on screen
     root.update_idletasks()
     x = (root.winfo_screenwidth() // 2) - (400 // 2)
-    y = (root.winfo_screenheight() // 2) - (300 // 2)
-    root.geometry(f'400x300+{x}+{y}')
+    y = (root.winfo_screenheight() // 2) - (350 // 2)
+    root.geometry(f'400x350+{x}+{y}')
     
     # Variables to store input values
     asin_var = tk.StringVar()
     year_var = tk.StringVar()
     months_var = tk.StringVar()
+    export_var = tk.BooleanVar()  # Checkbox for export preference
     
     # Variable to store the result
     result_var = [None]  # Using list to store result (mutable)
@@ -90,7 +91,7 @@ def get_user_input():
                 messagebox.showerror('Validation Error', f'Invalid months: {invalid_months}. Months must be 1-12.', parent=root)
                 return None
             
-            return asin, year, months
+            return asin, year, months, export_var.get()
             
         except ValueError:
             messagebox.showerror('Validation Error', 'Invalid month format. Use comma-separated numbers (e.g., 1,2,3).', parent=root)
@@ -140,11 +141,15 @@ def get_user_input():
     # Help text
     help_text = "Example: 1,2,3 for January, February, March"
     help_label = ttk.Label(main_frame, text=help_text, font=("Arial", 8), foreground="gray")
-    help_label.grid(row=4, column=0, columnspan=2, pady=(5, 20))
+    help_label.grid(row=4, column=0, columnspan=2, pady=(5, 10))
+    
+    # Export checkbox
+    export_checkbox = ttk.Checkbutton(main_frame, text="Export results to CSV file", variable=export_var)
+    export_checkbox.grid(row=5, column=0, columnspan=2, pady=(5, 20))
     
     # Buttons frame
     button_frame = ttk.Frame(main_frame)
-    button_frame.grid(row=5, column=0, columnspan=2, pady=(10, 0))
+    button_frame.grid(row=6, column=0, columnspan=2, pady=(10, 0))
     
     # Submit and Cancel buttons
     submit_btn = ttk.Button(button_frame, text="Submit", command=submit_inputs, style="Accent.TButton")
@@ -170,7 +175,7 @@ if user_input is None:
     print("Input cancelled or invalid. Exiting.")
     exit(1)
 
-ASIN, YEAR, MONTHS = user_input
+ASIN, YEAR, MONTHS, EXPORT_CSV = user_input
 
 # Fetch product data from Keepa
 url = 'https://api.keepa.com/product'
@@ -277,23 +282,17 @@ output_lines.append('-' * 40)
 text.insert(tk.END, '\n'.join(output_lines))
 text.config(state=tk.DISABLED)
 
-# Ask user if they want to export the DataFrame
-def ask_export():
-    export = messagebox.askyesno('Export Data', 'Do you want to export the summary DataFrame to a CSV file?', parent=result_root)
-    if export:
-        save_path = filedialog.asksaveasfilename(
-            title='Save buybox summary as CSV',
-            defaultextension='.csv',
-            filetypes=[('CSV files', '*.csv'), ('All files', '*.*')],
-            parent=result_root
-        )
-        if save_path:
-            pd.DataFrame(results).to_csv(save_path, index=False)
-            messagebox.showinfo('Export', f'Summary DataFrame saved to {save_path}', parent=result_root)
-        else:
-            messagebox.showinfo('Export', 'No file selected. DataFrame not saved.', parent=result_root)
+# Handle CSV export if requested
+if EXPORT_CSV:
+    save_path = filedialog.asksaveasfilename(
+        title='Save buybox summary as CSV',
+        defaultextension='.csv',
+        filetypes=[('CSV files', '*.csv'), ('All files', '*.*')],
+        parent=result_root
+    )
+    if save_path:
+        pd.DataFrame(results).to_csv(save_path, index=False)
+        messagebox.showinfo('Export', f'Summary DataFrame saved to {save_path}', parent=result_root)
     else:
-        messagebox.showinfo('Export', 'DataFrame export skipped.', parent=result_root)
-
-result_root.after(100, ask_export)
+        messagebox.showinfo('Export', 'No file selected. DataFrame not saved.', parent=result_root)
 result_root.mainloop()

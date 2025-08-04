@@ -2,5 +2,4 @@
 - Glance views adjusted BB
 - Add sales rank extraction
 - Add an option to input multiple ASINs and get results for them for the selected months.
-- Change the flow for export request. Make it a checkbox during one of the previous dialogboxes.
-- Merge the whole flow into one window, no need to create three windows asking for info.
+
