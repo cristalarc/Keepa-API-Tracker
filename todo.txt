@@ -1,5 +1,5 @@
 - Add list of ASINS so it's a scrollable select list when the script runs
 - Glance views adjusted BB
-- Add sales rank extraction
 - Add an option to input multiple ASINs and get results for them for the selected months.
+- Merge all scripts into one experience
 
