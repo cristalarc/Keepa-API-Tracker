@@ -5,45 +5,172 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 # Load API key from .env
-load_dotenv()
+load_dotenv('.env.local')
 KEEPA_API_KEY = os.getenv('Keepa_API_KEY')
+
+# Validate that API key was loaded
+if not KEEPA_API_KEY:
+    print("Error: Keepa_API_KEY not found in .env.local file.")
+    print("Please ensure your .env.local file contains: Keepa_API_KEY=your_api_key_here")
+    exit(1)
 
 AMAZON_SELLER_ID = 'ATVPDKIKX0DER'
 
-# --- Get user input via popup ---
+# --- Get user input via consolidated popup ---
 import tkinter as tk
 import pyautogui
 from screeninfo import get_monitors
-from tkinter import simpledialog, messagebox, filedialog
+from tkinter import simpledialog, messagebox, filedialog, ttk
 
 def get_user_input():
+    """
+    Creates a single consolidated input window for ASIN, year, and months.
+    Returns tuple of (asin, year, months) with all validation intact.
+    """
     mouse_x, mouse_y = pyautogui.position()
+    
+    # Create the main input window
     root = tk.Tk()
-    # Make the window tiny and position it at the mouse
-    root.geometry(f'1x1+{mouse_x}+{mouse_y}')
+    root.title("Keepa API Tracker - Input")
+    root.geometry(f'400x300+{mouse_x}+{mouse_y}')
     root.lift()
     root.attributes('-topmost', True)
-    root.update()
-    asin = simpledialog.askstring('Input', 'Enter ASIN:', parent=root)
-    if not asin or len(asin) != 10:
-        messagebox.showerror('Error', 'ASIN must be exactly 10 characters.', parent=root)
+    root.resizable(False, False)
+    
+    # Center the window on screen
+    root.update_idletasks()
+    x = (root.winfo_screenwidth() // 2) - (400 // 2)
+    y = (root.winfo_screenheight() // 2) - (300 // 2)
+    root.geometry(f'400x300+{x}+{y}')
+    
+    # Variables to store input values
+    asin_var = tk.StringVar()
+    year_var = tk.StringVar()
+    months_var = tk.StringVar()
+    
+    # Variable to store the result
+    result_var = [None]  # Using list to store result (mutable)
+    
+    # Validation function
+    def validate_inputs():
+        """Validates all inputs and returns (asin, year, months) or None if invalid"""
+        asin = asin_var.get().strip()
+        year_str = year_var.get().strip()
+        months_str = months_var.get().strip()
+        
+        # Validate ASIN
+        if not asin or len(asin) != 10:
+            messagebox.showerror('Validation Error', 'ASIN must be exactly 10 characters.', parent=root)
+            return None
+        
+        # Validate Year
+        if not year_str or not year_str.isdigit():
+            messagebox.showerror('Validation Error', 'Year must be a valid number.', parent=root)
+            return None
+        
+        year = int(year_str)
+        if year < 2011 or year > 2030:  # Reasonable range for Keepa data
+            messagebox.showerror('Validation Error', 'Year must be between 2011 and 2030.', parent=root)
+            return None
+        
+        # Validate Months
+        if not months_str:
+            messagebox.showerror('Validation Error', 'Please enter at least one month.', parent=root)
+            return None
+        
+        try:
+            months = [int(m.strip()) for m in months_str.split(',') if m.strip().isdigit()]
+            if not months:
+                messagebox.showerror('Validation Error', 'Please enter valid month numbers.', parent=root)
+                return None
+            
+            # Check if all months are valid (1-12)
+            invalid_months = [m for m in months if m < 1 or m > 12]
+            if invalid_months:
+                messagebox.showerror('Validation Error', f'Invalid months: {invalid_months}. Months must be 1-12.', parent=root)
+                return None
+            
+            return asin, year, months
+            
+        except ValueError:
+            messagebox.showerror('Validation Error', 'Invalid month format. Use comma-separated numbers (e.g., 1,2,3).', parent=root)
+            return None
+    
+    # Submit function
+    def submit_inputs():
+        """Handles form submission and validation"""
+        result = validate_inputs()
+        if result:
+            result_var[0] = result  # Store the result
+            root.destroy()
+    
+    # Cancel function
+    def cancel_inputs():
+        """Handles cancellation"""
         root.destroy()
-        exit(1)
-    year = simpledialog.askinteger('Input', 'Enter Year (e.g. 2025):', parent=root)
-    months_str = simpledialog.askstring('Input', 'Enter months as comma-separated numbers (e.g. 1,2,3):', parent=root)
-    if not year or not months_str:
-        messagebox.showerror('Error', 'All fields are required.', parent=root)
-        root.destroy()
-        exit(1)
-    months = [int(m.strip()) for m in months_str.split(',') if m.strip().isdigit() and 1 <= int(m.strip()) <= 12]
-    if not months:
-        messagebox.showerror('Error', 'Invalid months input.', parent=root)
-        root.destroy()
-        exit(1)
-    root.destroy()
-    return asin, year, months
+    
+    # Create the form layout
+    main_frame = ttk.Frame(root, padding="20")
+    main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+    
+    # Configure grid weights
+    root.columnconfigure(0, weight=1)
+    root.rowconfigure(0, weight=1)
+    main_frame.columnconfigure(1, weight=1)
+    
+    # Title
+    title_label = ttk.Label(main_frame, text="Keepa API Tracker", font=("Arial", 16, "bold"))
+    title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
+    
+    # ASIN Input
+    ttk.Label(main_frame, text="ASIN (10 characters):", font=("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
+    asin_entry = ttk.Entry(main_frame, textvariable=asin_var, width=30)
+    asin_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+    
+    # Year Input
+    ttk.Label(main_frame, text="Year:", font=("Arial", 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
+    year_entry = ttk.Entry(main_frame, textvariable=year_var, width=30)
+    year_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+    
+    # Months Input
+    ttk.Label(main_frame, text="Months (comma-separated):", font=("Arial", 10)).grid(row=3, column=0, sticky=tk.W, pady=5)
+    months_entry = ttk.Entry(main_frame, textvariable=months_var, width=30)
+    months_entry.grid(row=3, column=1, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+    
+    # Help text
+    help_text = "Example: 1,2,3 for January, February, March"
+    help_label = ttk.Label(main_frame, text=help_text, font=("Arial", 8), foreground="gray")
+    help_label.grid(row=4, column=0, columnspan=2, pady=(5, 20))
+    
+    # Buttons frame
+    button_frame = ttk.Frame(main_frame)
+    button_frame.grid(row=5, column=0, columnspan=2, pady=(10, 0))
+    
+    # Submit and Cancel buttons
+    submit_btn = ttk.Button(button_frame, text="Submit", command=submit_inputs, style="Accent.TButton")
+    submit_btn.pack(side=tk.LEFT, padx=(0, 10))
+    
+    cancel_btn = ttk.Button(button_frame, text="Cancel", command=cancel_inputs)
+    cancel_btn.pack(side=tk.LEFT)
+    
+    # Set focus to first entry and bind Enter key
+    asin_entry.focus()
+    root.bind('<Return>', lambda e: submit_inputs())
+    root.bind('<Escape>', lambda e: cancel_inputs())
+    
+    # Start the GUI event loop
+    root.mainloop()
+    
+    # Return the stored result
+    return result_var[0]
 
-ASIN, YEAR, MONTHS = get_user_input()
+# Get user input with the new consolidated interface
+user_input = get_user_input()
+if user_input is None:
+    print("Input cancelled or invalid. Exiting.")
+    exit(1)
+
+ASIN, YEAR, MONTHS = user_input
 
 # Fetch product data from Keepa
 url = 'https://api.keepa.com/product'
