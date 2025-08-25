@@ -1,5 +1,34 @@
 # Changelog
 
+## 2025-01-27
+- **NEW FEATURE**: Implemented batch processing functionality for multiple ASINs
+  - Added "Batch Processing" mode alongside existing "Single ASIN" mode
+  - Created large text area for entering multiple ASINs (comma, space, or newline separated)
+  - Added "Load All Saved ASINs" and "Load from List" quick-load buttons for batch input
+  - Implemented progress tracking with visual progress bar and status updates
+  - Added comprehensive error handling for individual ASIN processing failures
+  - Enhanced results display to show batch analysis with grouped results by ASIN
+  - Updated CSV export to handle multiple ASIN results in a single file
+- **UI IMPROVEMENTS**: Enhanced ASIN Manager with multiple named lists
+  - Increased ASIN Manager window size to 800x600 for better visibility
+  - Implemented tabbed interface (Notebook) with "Add ASINs", "Manage Lists", and "All ASINs" tabs
+  - Added support for multiple named ASIN lists with descriptions
+  - Created list management features: create, remove, and clear lists
+  - Added real-time synchronization between ASIN Manager and main application
+  - Implemented immediate UI updates when ASINs are added/removed from lists
+- **UI FIXES**: Resolved window positioning and layout issues
+  - Fixed manual input field being disabled when "Manual Input" was selected
+  - Added dynamic window sizing (600x600 for single mode, 600x700 for batch mode)
+  - Centered "Select List" dialog window on screen instead of top-left corner
+  - Centered "Processing ASINs" progress window on screen
+  - Fixed submit button visibility in batch processing mode
+- **CODE QUALITY**: Improved application architecture and user experience
+  - Separated single ASIN and batch processing logic for better maintainability
+  - Added comprehensive input validation for batch ASIN processing
+  - Implemented proper error handling and user feedback throughout the application
+  - Enhanced ASIN validation with detailed error messages for invalid ASINs
+  - Added keyboard shortcuts (Enter to submit, Escape to cancel)
+
 ## 2025-08-04
 - **NEW FEATURE**: Created `sales_rank_analyzer.py` - A comprehensive sales rank analysis tool
   - Added `SalesRankAnalyzer` class following Single Responsibility Principle

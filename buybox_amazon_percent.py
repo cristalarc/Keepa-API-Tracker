@@ -168,6 +168,7 @@ def get_user_input():
     months_var = tk.StringVar()
     export_var = tk.BooleanVar()  # Checkbox for export preference
     asin_input_mode = tk.StringVar(value="manual")  # "manual" or "select"
+    batch_mode_var = tk.BooleanVar()  # Checkbox for batch processing mode
     
     # Variable to store the result
     result_var = [None]  # Using list to store result (mutable)
@@ -446,21 +447,60 @@ def get_user_input():
             asin_combobox.pack_forget()
             asin_entry.config(state="normal")
     
+    def update_batch_mode():
+        """Update UI based on batch mode selection"""
+        if batch_mode_var.get():
+            # Batch mode: show batch input, hide single ASIN input
+            batch_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(5, 10), padx=(0, 0))
+            asin_label.grid_remove()
+            asin_input_frame.grid_remove()
+            asin_manager_button.grid_remove()
+            # Increase window height for batch mode
+            root.geometry(f'600x700+{x}+{y}')
+        else:
+            # Single mode: hide batch input, show single ASIN input
+            batch_frame.grid_remove()
+            asin_label.grid()
+            asin_input_frame.grid()
+            asin_manager_button.grid()
+            # Reset window height for single mode
+            root.geometry(f'600x600+{x}+{y}')
+    
     # Validation function
     def validate_inputs():
-        """Validates all inputs and returns (asin, year, months, export_preference) or None if invalid"""
-        # Get ASIN based on input mode
-        if asin_input_mode.get() == "select":
-            asin = asin_var.get().strip()
-            if not asin:
-                messagebox.showerror('Validation Error', 'Please select an ASIN from the list.', parent=root)
+        """Validates all inputs and returns (asins, year, months, export_preference) or None if invalid"""
+        # Get ASIN(s) based on input mode
+        if batch_mode_var.get():
+            # Batch mode: validate multiple ASINs
+            batch_text = batch_text_widget.get("1.0", tk.END).strip()
+            if not batch_text:
+                messagebox.showerror('Validation Error', 'Please enter ASINs for batch processing.', parent=root)
                 return None
+            
+            valid_asins, error_msg = validate_asin_list(batch_text)
+            if error_msg:
+                messagebox.showerror('Validation Error', error_msg, parent=root)
+                return None
+            
+            if not valid_asins:
+                messagebox.showerror('Validation Error', 'No valid ASINs found in batch input.', parent=root)
+                return None
+            
+            asins = valid_asins
         else:
-            asin = asin_var.get().strip()
-            # Validate ASIN format
-            if not validate_asin(asin):
-                messagebox.showerror('Validation Error', 'ASIN must be exactly 10 characters (letters and numbers only).', parent=root)
-                return None
+            # Single mode: validate single ASIN
+            if asin_input_mode.get() == "select":
+                asin = asin_var.get().strip()
+                if not asin:
+                    messagebox.showerror('Validation Error', 'Please select an ASIN from the list.', parent=root)
+                    return None
+            else:
+                asin = asin_var.get().strip()
+                # Validate ASIN format
+                if not validate_asin(asin):
+                    messagebox.showerror('Validation Error', 'ASIN must be exactly 10 characters (letters and numbers only).', parent=root)
+                    return None
+            asins = [asin]
         
         year_str = year_var.get().strip()
         months_str = months_var.get().strip()
@@ -492,7 +532,7 @@ def get_user_input():
                 messagebox.showerror('Validation Error', f'Invalid months: {invalid_months}. Months must be 1-12.', parent=root)
                 return None
             
-            return asin, year, months, export_var.get()
+            return asins, year, months, export_var.get()
             
         except ValueError:
             messagebox.showerror('Validation Error', 'Invalid month format. Use comma-separated numbers (e.g., 1,2,3).', parent=root)
@@ -525,21 +565,31 @@ def get_user_input():
     title_label = ttk.Label(main_frame, text="Keepa API Tracker", font=("Arial", 16, "bold"))
     title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
     
-    # ASIN Input Mode Selection
-    ttk.Label(main_frame, text="ASIN Input Mode:", font=("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
+    # Processing Mode Selection
+    ttk.Label(main_frame, text="Processing Mode:", font=("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
+    
+    single_mode_radio = ttk.Radiobutton(main_frame, text="Single ASIN", variable=batch_mode_var, value=False, command=update_batch_mode)
+    single_mode_radio.grid(row=1, column=1, sticky=tk.W, pady=5)
+    
+    batch_mode_radio = ttk.Radiobutton(main_frame, text="Batch Processing", variable=batch_mode_var, value=True, command=update_batch_mode)
+    batch_mode_radio.grid(row=1, column=2, sticky=tk.W, pady=5)
+    
+    # ASIN Input Mode Selection (for single mode)
+    ttk.Label(main_frame, text="ASIN Input Mode:", font=("Arial", 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
     
     manual_radio = ttk.Radiobutton(main_frame, text="Manual Input", variable=asin_input_mode, value="manual", command=update_asin_selection)
-    manual_radio.grid(row=1, column=1, sticky=tk.W, pady=5)
+    manual_radio.grid(row=2, column=1, sticky=tk.W, pady=5)
     
     select_radio = ttk.Radiobutton(main_frame, text="Select from List", variable=asin_input_mode, value="select", command=update_asin_selection)
-    select_radio.grid(row=1, column=2, sticky=tk.W, pady=5)
+    select_radio.grid(row=2, column=2, sticky=tk.W, pady=5)
     
     # ASIN Input
-    ttk.Label(main_frame, text="ASIN:", font=("Arial", 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
+    asin_label = ttk.Label(main_frame, text="ASIN:", font=("Arial", 10))
+    asin_label.grid(row=3, column=0, sticky=tk.W, pady=5)
     
     # Create a frame to hold the ASIN input widgets
     asin_input_frame = ttk.Frame(main_frame)
-    asin_input_frame.grid(row=2, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+    asin_input_frame.grid(row=3, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
     
     # Manual entry
     asin_entry = ttk.Entry(asin_input_frame, textvariable=asin_var, width=30)
@@ -551,30 +601,91 @@ def get_user_input():
     asin_combobox.pack(fill=tk.X, expand=True)
     
     # ASIN Manager Button
-    ttk.Button(main_frame, text="Manage ASIN List", command=open_asin_manager).grid(row=3, column=0, columnspan=3, pady=(5, 10))
+    asin_manager_button = ttk.Button(main_frame, text="Manage ASIN List", command=open_asin_manager)
+    asin_manager_button.grid(row=4, column=0, columnspan=3, pady=(5, 10))
+    
+    # Batch Processing Input
+    batch_frame = ttk.LabelFrame(main_frame, text="Batch ASIN Processing", padding="10")
+    
+    ttk.Label(batch_frame, text="Enter ASINs (comma, space, or newline separated):").pack(anchor=tk.W)
+    
+    batch_text_widget = tk.Text(batch_frame, height=6, width=50)
+    batch_text_widget.pack(fill=tk.X, pady=(5, 10))
+    
+    # Quick load buttons for batch processing
+    batch_buttons_frame = ttk.Frame(batch_frame)
+    batch_buttons_frame.pack(fill=tk.X)
+    
+    def load_all_saved_asins():
+        """Load all saved ASINs into batch input"""
+        all_asins = load_saved_asins()
+        if all_asins:
+            batch_text_widget.delete("1.0", tk.END)
+            batch_text_widget.insert("1.0", "\n".join(all_asins))
+        else:
+            messagebox.showinfo("Info", "No saved ASINs found.", parent=root)
+    
+    def load_selected_list():
+        """Load ASINs from a selected list into batch input"""
+        lists_data = load_all_asin_lists()
+        if not lists_data:
+            messagebox.showinfo("Info", "No ASIN lists found.", parent=root)
+            return
+        
+        # Create a simple dialog to select list
+        list_window = tk.Toplevel(root)
+        list_window.title("Select List")
+        list_window.geometry("300x200")
+        list_window.transient(root)
+        list_window.grab_set()
+        
+        # Center the list selection window
+        list_window.update_idletasks()
+        list_x = (list_window.winfo_screenwidth() // 2) - (300 // 2)
+        list_y = (list_window.winfo_screenheight() // 2) - (200 // 2)
+        list_window.geometry(f'300x200+{list_x}+{list_y}')
+        
+        ttk.Label(list_window, text="Select a list to load:").pack(pady=10)
+        
+        list_var = tk.StringVar(value=list(lists_data.keys())[0])
+        list_combobox = ttk.Combobox(list_window, textvariable=list_var, values=list(lists_data.keys()), state="readonly")
+        list_combobox.pack(pady=10)
+        
+        def load_list():
+            selected_list = list_var.get()
+            asins = lists_data[selected_list].get('asins', [])
+            if asins:
+                batch_text_widget.delete("1.0", tk.END)
+                batch_text_widget.insert("1.0", "\n".join(asins))
+            list_window.destroy()
+        
+        ttk.Button(list_window, text="Load", command=load_list).pack(pady=10)
+    
+    ttk.Button(batch_buttons_frame, text="Load All Saved ASINs", command=load_all_saved_asins).pack(side=tk.LEFT, padx=(0, 10))
+    ttk.Button(batch_buttons_frame, text="Load from List", command=load_selected_list).pack(side=tk.LEFT)
     
     # Year Input
-    ttk.Label(main_frame, text="Year:", font=("Arial", 10)).grid(row=4, column=0, sticky=tk.W, pady=5)
+    ttk.Label(main_frame, text="Year:", font=("Arial", 10)).grid(row=5, column=0, sticky=tk.W, pady=5)
     year_entry = ttk.Entry(main_frame, textvariable=year_var, width=30)
-    year_entry.grid(row=4, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+    year_entry.grid(row=5, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
     
     # Months Input
-    ttk.Label(main_frame, text="Months (comma-separated):", font=("Arial", 10)).grid(row=5, column=0, sticky=tk.W, pady=5)
+    ttk.Label(main_frame, text="Months (comma-separated):", font=("Arial", 10)).grid(row=6, column=0, sticky=tk.W, pady=5)
     months_entry = ttk.Entry(main_frame, textvariable=months_var, width=30)
-    months_entry.grid(row=5, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+    months_entry.grid(row=6, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
     
     # Help text
     help_text = "Example: 1,2,3 for January, February, March"
     help_label = ttk.Label(main_frame, text=help_text, font=("Arial", 8), foreground="gray")
-    help_label.grid(row=6, column=0, columnspan=3, pady=(5, 10))
+    help_label.grid(row=7, column=0, columnspan=3, pady=(5, 10))
     
     # Export checkbox
     export_checkbox = ttk.Checkbutton(main_frame, text="Export results to CSV file", variable=export_var)
-    export_checkbox.grid(row=7, column=0, columnspan=3, pady=(5, 20))
+    export_checkbox.grid(row=8, column=0, columnspan=3, pady=(5, 20))
     
     # Buttons frame
     button_frame = ttk.Frame(main_frame)
-    button_frame.grid(row=8, column=0, columnspan=3, pady=(10, 0))
+    button_frame.grid(row=9, column=0, columnspan=3, pady=(10, 0))
     
     # Submit and Cancel buttons
     submit_btn = ttk.Button(button_frame, text="Submit", command=submit_inputs, style="Accent.TButton")
@@ -583,8 +694,9 @@ def get_user_input():
     cancel_btn = ttk.Button(button_frame, text="Cancel", command=cancel_inputs)
     cancel_btn.pack(side=tk.LEFT)
     
-    # Initialize ASIN input mode
+    # Initialize UI modes
     update_asin_selection()
+    update_batch_mode()
     
     # Set focus to first entry and bind Enter key
     asin_entry.focus()
@@ -603,110 +715,218 @@ if user_input is None:
     print("Input cancelled or invalid. Exiting.")
     exit(1)
 
-ASIN, YEAR, MONTHS, EXPORT_CSV = user_input
+ASINS, YEAR, MONTHS, EXPORT_CSV = user_input
 
-# Fetch product data from Keepa
-url = 'https://api.keepa.com/product'
-params = {
-    'key': KEEPA_API_KEY,
-    'domain': 1,  # Amazon.com
-    'asin': ASIN,
-    'buybox': 1
-}
-response = requests.get(url, params=params)
-data = response.json()
+def process_single_asin(asin):
+    """Process a single ASIN and return results"""
+    # Fetch product data from Keepa
+    url = 'https://api.keepa.com/product'
+    params = {
+        'key': KEEPA_API_KEY,
+        'domain': 1,  # Amazon.com
+        'asin': asin,
+        'buybox': 1
+    }
+    
+    try:
+        response = requests.get(url, params=params)
+        data = response.json()
+        
+        if not data.get('products'):
+            return None, f"No product data found for ASIN {asin}"
+        
+        product = data['products'][0]
+        buybox_history = product.get('buyBoxSellerIdHistory')
+        
+        if not buybox_history:
+            return None, f"No buybox history available for ASIN {asin}"
+        
+        # buyBoxSellerIdHistory: [timestamp1, sellerId1, timestamp2, sellerId2, ...]
+        # Timestamps are in Keepa minutes since Jan 1, 2011
+        keepa_epoch = datetime(2011, 1, 1)
+        
+        records = []
+        for i in range(0, len(buybox_history), 2):
+            minutes = int(buybox_history[i])
+            seller_id = buybox_history[i+1]
+            dt = keepa_epoch + pd.Timedelta(minutes=minutes)
+            records.append({'datetime': dt, 'seller_id': seller_id})
+        
+        df = pd.DataFrame(records)
+        df['year'] = df['datetime'].dt.year
+        df['month'] = df['datetime'].dt.month
+        
+        # Filter for selected month/year
+        results = []
+        for month in MONTHS:
+            month_df = df[(df['year'] == YEAR) & (df['month'] == month)].sort_values('datetime').reset_index(drop=True)
+            if month_df.empty or len(month_df) < 2:
+                results.append({
+                    'asin': asin,
+                    'month': month,
+                    'amazon_percent_count': None,
+                    'amazon_percent_time': None,
+                    'total_count': 0,
+                    'amazon_count': 0,
+                    'amazon_time_minutes': None,
+                    'total_time_minutes': None
+                })
+                continue
+            # Count-based calculation
+            amazon_count = (month_df['seller_id'] == AMAZON_SELLER_ID).sum()
+            total_count = len(month_df)
+            percent_count = (amazon_count / total_count) * 100
+            # Time-based calculation
+            amazon_time = 0
+            total_time = 0
+            for i in range(len(month_df) - 1):
+                t1 = month_df.loc[i, 'datetime']
+                t2 = month_df.loc[i + 1, 'datetime']
+                delta = (t2 - t1).total_seconds() / 60  # minutes
+                total_time += delta
+                if month_df.loc[i, 'seller_id'] == AMAZON_SELLER_ID:
+                    amazon_time += delta
+            percent_time = (amazon_time / total_time) * 100 if total_time > 0 else None
+            results.append({
+                'asin': asin,
+                'month': month,
+                'amazon_percent_count': percent_count,
+                'amazon_percent_time': percent_time,
+                'total_count': total_count,
+                'amazon_count': amazon_count,
+                'amazon_time_minutes': amazon_time,
+                'total_time_minutes': total_time
+            })
+        
+        return results, None
+        
+    except Exception as e:
+        return None, f"Error processing ASIN {asin}: {str(e)}"
 
-if not data.get('products'):
-    print('No product data found.')
-    exit(1)
+# Process all ASINs
+all_results = []
+errors = []
 
-product = data['products'][0]
-buybox_history = product.get('buyBoxSellerIdHistory')
-
-if not buybox_history:
-    print('No buybox history available for this ASIN.')
-    exit(1)
-
-# buyBoxSellerIdHistory: [timestamp1, sellerId1, timestamp2, sellerId2, ...]
-# Timestamps are in Keepa minutes since Jan 1, 2011
-keepa_epoch = datetime(2011, 1, 1)
-
-records = []
-for i in range(0, len(buybox_history), 2):
-    minutes = int(buybox_history[i])
-    seller_id = buybox_history[i+1]
-    dt = keepa_epoch + pd.Timedelta(minutes=minutes)
-    records.append({'datetime': dt, 'seller_id': seller_id})
-
-df = pd.DataFrame(records)
-df['year'] = df['datetime'].dt.year
-df['month'] = df['datetime'].dt.month
-
-# Filter for selected month/year
-
-results = []
-for month in MONTHS:
-    month_df = df[(df['year'] == YEAR) & (df['month'] == month)].sort_values('datetime').reset_index(drop=True)
-    if month_df.empty or len(month_df) < 2:
-        results.append({
-            'month': month,
-            'amazon_percent_count': None,
-            'amazon_percent_time': None,
-            'total_count': 0,
-            'amazon_count': 0,
-            'amazon_time_minutes': None,
-            'total_time_minutes': None
-        })
-        continue
-    # Count-based calculation
-    amazon_count = (month_df['seller_id'] == AMAZON_SELLER_ID).sum()
-    total_count = len(month_df)
-    percent_count = (amazon_count / total_count) * 100
-    # Time-based calculation
-    amazon_time = 0
-    total_time = 0
-    for i in range(len(month_df) - 1):
-        t1 = month_df.loc[i, 'datetime']
-        t2 = month_df.loc[i + 1, 'datetime']
-        delta = (t2 - t1).total_seconds() / 60  # minutes
-        total_time += delta
-        if month_df.loc[i, 'seller_id'] == AMAZON_SELLER_ID:
-            amazon_time += delta
-    percent_time = (amazon_time / total_time) * 100 if total_time > 0 else None
-    results.append({
-        'month': month,
-        'amazon_percent_count': percent_count,
-        'amazon_percent_time': percent_time,
-        'total_count': total_count,
-        'amazon_count': amazon_count,
-        'amazon_time_minutes': amazon_time,
-        'total_time_minutes': total_time
-    })
+if len(ASINS) == 1:
+    # Single ASIN processing (original behavior)
+    results, error = process_single_asin(ASINS[0])
+    if error:
+        print(error)
+        exit(1)
+    all_results = results
+else:
+    # Batch processing with progress tracking
+    print(f"Processing {len(ASINS)} ASINs...")
+    
+              # Create progress window
+    progress_window = tk.Tk()
+    progress_window.title("Processing ASINs")
+    progress_window.geometry("600x200")
+    progress_window.lift()
+    progress_window.attributes('-topmost', True)
+     
+    # Center the progress window
+    progress_window.update_idletasks()
+    progress_x = (progress_window.winfo_screenwidth() // 2) - (600 // 2)
+    progress_y = (progress_window.winfo_screenheight() // 2) - (200 // 2)
+    progress_window.geometry(f'600x200+{progress_x}+{progress_y}')
+    
+    progress_label = ttk.Label(progress_window, text="Processing ASINs...", font=("Arial", 12))
+    progress_label.pack(pady=20)
+    
+    progress_bar = ttk.Progressbar(progress_window, length=300, mode='determinate')
+    progress_bar.pack(pady=10)
+    
+    status_label = ttk.Label(progress_window, text="", font=("Arial", 10))
+    status_label.pack(pady=10)
+    
+    progress_bar['maximum'] = len(ASINS)
+    
+    for i, asin in enumerate(ASINS):
+        # Update progress
+        progress_bar['value'] = i + 1
+        status_label.config(text=f"Processing ASIN {i+1}/{len(ASINS)}: {asin}")
+        progress_window.update()
+        
+        # Process ASIN
+        results, error = process_single_asin(asin)
+        if error:
+            errors.append(error)
+        else:
+            all_results.extend(results)
+    
+    progress_window.destroy()
+    
+    # Show summary
+    if errors:
+        print(f"Completed with {len(errors)} errors:")
+        for error in errors:
+            print(f"  - {error}")
+    else:
+        print("All ASINs processed successfully!")
 
 # Show results in a dedicated tkinter window
 mouse_x, mouse_y = pyautogui.position()
 result_root = tk.Tk()
-result_root.geometry(f'1000x1000+{mouse_x}+{mouse_y}')
+result_root.geometry(f'1200x800+{mouse_x}+{mouse_y}')
 result_root.title('Buybox Analysis Results')
 result_root.lift()
 result_root.attributes('-topmost', True)
 
 from tkinter import scrolledtext
-text = scrolledtext.ScrolledText(result_root, wrap=tk.WORD, width=50, height=20)
+text = scrolledtext.ScrolledText(result_root, wrap=tk.WORD, width=80, height=30)
 text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
 
-output_lines = [f'ASIN: {ASIN} | Year: {YEAR}\n']
-for r in results:
+# Generate output
+if len(ASINS) == 1:
+    # Single ASIN output (original format)
+    output_lines = [f'ASIN: {ASINS[0]} | Year: {YEAR}\n']
+    for r in all_results:
+        output_lines.append('-' * 40)
+        output_lines.append(f'Month: {r["month"]:02d}')
+        if r['amazon_percent_time'] is None:
+            output_lines.append('No buybox data for this month.')
+        else:
+            output_lines.append(f'Amazon match count: {r["amazon_count"]} / {r["total_count"]}')
+            output_lines.append(f'Amazon held the buybox (by count): {r["amazon_percent_count"]:.2f}%')
+            output_lines.append(f'Amazon held the buybox (by time): {r["amazon_percent_time"]:.2f}%')
+            output_lines.append(f'Amazon time held (min): {r["amazon_time_minutes"]:.2f} / {r["total_time_minutes"]:.2f}')
     output_lines.append('-' * 40)
-    output_lines.append(f'Month: {r["month"]:02d}')
-    if r['amazon_percent_time'] is None:
-        output_lines.append('No buybox data for this month.')
-    else:
-        output_lines.append(f'Amazon match count: {r["amazon_count"]} / {r["total_count"]}')
-        output_lines.append(f'Amazon held the buybox (by count): {r["amazon_percent_count"]:.2f}%')
-        output_lines.append(f'Amazon held the buybox (by time): {r["amazon_percent_time"]:.2f}%')
-        output_lines.append(f'Amazon time held (min): {r["amazon_time_minutes"]:.2f} / {r["total_time_minutes"]:.2f}')
-output_lines.append('-' * 40)
+else:
+    # Batch processing output
+    output_lines = [f'Batch Analysis Results | Year: {YEAR} | ASINs Processed: {len(ASINS)}\n']
+    if errors:
+        output_lines.append(f'Errors: {len(errors)} ASINs failed to process\n')
+    
+    # Group results by ASIN
+    asin_results = {}
+    for r in all_results:
+        asin = r['asin']
+        if asin not in asin_results:
+            asin_results[asin] = []
+        asin_results[asin].append(r)
+    
+    for asin in sorted(asin_results.keys()):
+        output_lines.append('=' * 60)
+        output_lines.append(f'ASIN: {asin}')
+        output_lines.append('=' * 60)
+        
+        for r in asin_results[asin]:
+            output_lines.append(f'Month: {r["month"]:02d}')
+            if r['amazon_percent_time'] is None:
+                output_lines.append('  No buybox data for this month.')
+            else:
+                output_lines.append(f'  Amazon held the buybox (by count): {r["amazon_percent_count"]:.2f}%')
+                output_lines.append(f'  Amazon held the buybox (by time): {r["amazon_percent_time"]:.2f}%')
+            output_lines.append('')
+    
+    if errors:
+        output_lines.append('=' * 60)
+        output_lines.append('ERRORS:')
+        output_lines.append('=' * 60)
+        for error in errors:
+            output_lines.append(f'  {error}')
+
 text.insert(tk.END, '\n'.join(output_lines))
 text.config(state=tk.DISABLED)
 
@@ -719,8 +939,15 @@ if EXPORT_CSV:
         parent=result_root
     )
     if save_path:
-        pd.DataFrame(results).to_csv(save_path, index=False)
-        messagebox.showinfo('Export', f'Summary DataFrame saved to {save_path}', parent=result_root)
+        # Create DataFrame with all results
+        df_results = pd.DataFrame(all_results)
+        df_results.to_csv(save_path, index=False)
+        
+        # Show summary message
+        if len(ASINS) == 1:
+            messagebox.showinfo('Export', f'Summary DataFrame saved to {save_path}', parent=result_root)
+        else:
+            messagebox.showinfo('Export', f'Batch results saved to {save_path}\nProcessed {len(ASINS)} ASINs with {len(errors)} errors', parent=result_root)
     else:
         messagebox.showinfo('Export', 'No file selected. DataFrame not saved.', parent=result_root)
 result_root.mainloop()
