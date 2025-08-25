@@ -22,18 +22,53 @@ AMAZON_SELLER_ID = 'ATVPDKIKX0DER'
 ASIN_FILE = 'saved_asins.json'
 
 def load_saved_asins():
-    """Load saved ASINs from JSON file"""
+    """Load saved ASINs from JSON file - returns all ASINs from all lists"""
     try:
         if os.path.exists(ASIN_FILE):
             with open(ASIN_FILE, 'r') as f:
                 data = json.load(f)
-                return data.get('asins', [])
+                # Support both old format (single list) and new format (named lists)
+                if 'lists' in data:
+                    # New format: multiple named lists
+                    all_asins = []
+                    for list_name, list_data in data['lists'].items():
+                        all_asins.extend(list_data.get('asins', []))
+                    return all_asins
+                else:
+                    # Old format: single list
+                    return data.get('asins', [])
         return []
     except (json.JSONDecodeError, FileNotFoundError):
         return []
 
+def load_all_asin_lists():
+    """Load all ASIN lists with their names"""
+    try:
+        if os.path.exists(ASIN_FILE):
+            with open(ASIN_FILE, 'r') as f:
+                data = json.load(f)
+                if 'lists' in data:
+                    return data['lists']
+                else:
+                    # Convert old format to new format
+                    old_asins = data.get('asins', [])
+                    return {'Default List': {'asins': old_asins, 'description': 'Migrated from old format'}}
+        return {}
+    except (json.JSONDecodeError, FileNotFoundError):
+        return {}
+
+def save_asin_lists(lists_data):
+    """Save ASIN lists to JSON file"""
+    try:
+        with open(ASIN_FILE, 'w') as f:
+            json.dump({'lists': lists_data}, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"Error saving ASIN lists: {e}")
+        return False
+
 def save_asins_to_file(asins):
-    """Save ASINs to JSON file"""
+    """Save ASINs to JSON file - legacy function for backward compatibility"""
     try:
         with open(ASIN_FILE, 'w') as f:
             json.dump({'asins': asins}, f, indent=2)
@@ -77,16 +112,26 @@ def validate_asin_list(asin_text):
     
     return valid_asins, None
 
-def add_asins_to_saved_list(new_asins):
-    """Add new ASINs to the saved list, avoiding duplicates"""
-    current_asins = load_saved_asins()
+def add_asins_to_saved_list(new_asins, list_name="Default List"):
+    """Add new ASINs to a specific list, avoiding duplicates"""
+    lists_data = load_all_asin_lists()
+    
+    # Create the list if it doesn't exist
+    if list_name not in lists_data:
+        lists_data[list_name] = {'asins': [], 'description': ''}
+    
+    # Get current ASINs from the specific list
+    current_asins = lists_data[list_name]['asins']
     
     # Convert to uppercase and remove duplicates
     new_asins_upper = [asin.upper() for asin in new_asins]
     all_asins = list(set(current_asins + new_asins_upper))
     
-    # Save updated list
-    if save_asins_to_file(all_asins):
+    # Update the list
+    lists_data[list_name]['asins'] = all_asins
+    
+    # Save updated lists
+    if save_asin_lists(lists_data):
         return len(all_asins), len(new_asins)
     return len(current_asins), 0
 
@@ -113,9 +158,9 @@ def get_user_input():
     
     # Center the window on screen
     root.update_idletasks()
-    x = (root.winfo_screenwidth() // 2) - (500 // 2)
-    y = (root.winfo_screenheight() // 2) - (500 // 2)
-    root.geometry(f'500x500+{x}+{y}')
+    x = (root.winfo_screenwidth() // 2) - (600 // 2)
+    y = (root.winfo_screenheight() // 2) - (600 // 2)
+    root.geometry(f'600x600+{x}+{y}')
     
     # Variables to store input values
     asin_var = tk.StringVar()
@@ -132,12 +177,12 @@ def get_user_input():
         """Open ASIN management window"""
         manager_window = tk.Toplevel(root)
         manager_window.title("ASIN Manager")
-        manager_window.geometry("600x400")
+        manager_window.geometry("800x600")
         manager_window.transient(root)
         manager_window.grab_set()
         
-        # Load current ASINs
-        saved_asins = load_saved_asins()
+        # Load current ASIN lists
+        lists_data = load_all_asin_lists()
         
         # Create main frame
         main_frame = ttk.Frame(manager_window, padding="20")
@@ -146,13 +191,53 @@ def get_user_input():
         # Title
         ttk.Label(main_frame, text="ASIN Manager", font=("Arial", 16, "bold")).pack(pady=(0, 20))
         
+        # Create notebook for tabs
+        notebook = ttk.Notebook(main_frame)
+        notebook.pack(fill=tk.BOTH, expand=True)
+        
+        # Add ASINs tab
+        add_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(add_frame, text="Add ASINs")
+        
+        # List selection for adding ASINs
+        list_selection_frame = ttk.Frame(add_frame)
+        list_selection_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(list_selection_frame, text="Add to list:").pack(side=tk.LEFT)
+        list_names = list(lists_data.keys()) if lists_data else ["Default List"]
+        selected_list_var = tk.StringVar(value=list_names[0])
+        list_combobox = ttk.Combobox(list_selection_frame, textvariable=selected_list_var, values=list_names, state="readonly", width=20)
+        list_combobox.pack(side=tk.LEFT, padx=(10, 0))
+        
+        def create_new_list():
+            """Create a new ASIN list"""
+            new_name = simpledialog.askstring("New List", "Enter name for new list:", parent=manager_window)
+            if new_name and new_name.strip():
+                new_name = new_name.strip()
+                if new_name in lists_data:
+                    messagebox.showerror("Error", "List name already exists.", parent=manager_window)
+                    return
+                
+                lists_data[new_name] = {'asins': [], 'description': ''}
+                if save_asin_lists(lists_data):
+                    # Update combobox
+                    list_names = list(lists_data.keys())
+                    list_combobox['values'] = list_names
+                    selected_list_var.set(new_name)
+                    messagebox.showinfo("Success", f"Created new list: {new_name}", parent=manager_window)
+                    refresh_all_lists()
+                else:
+                    messagebox.showerror("Error", "Failed to create new list.", parent=manager_window)
+        
+        ttk.Button(list_selection_frame, text="New List", command=create_new_list).pack(side=tk.LEFT, padx=(10, 0))
+        
         # Add ASINs section
-        add_frame = ttk.LabelFrame(main_frame, text="Add New ASINs", padding="10")
-        add_frame.pack(fill=tk.X, pady=(0, 10))
+        add_asins_frame = ttk.LabelFrame(add_frame, text="Add New ASINs", padding="10")
+        add_asins_frame.pack(fill=tk.X, pady=(10, 0))
         
-        ttk.Label(add_frame, text="Paste ASINs (comma, space, or newline separated):").pack(anchor=tk.W)
+        ttk.Label(add_asins_frame, text="Paste ASINs (comma, space, or newline separated):").pack(anchor=tk.W)
         
-        asin_text = tk.Text(add_frame, height=4, width=50)
+        asin_text = tk.Text(add_asins_frame, height=6, width=70)
         asin_text.pack(fill=tk.X, pady=(5, 10))
         
         def add_asins():
@@ -168,29 +253,113 @@ def get_user_input():
                 messagebox.showwarning("No ASINs", "No valid ASINs found in input.", parent=manager_window)
                 return
             
-            total_asins, new_asins = add_asins_to_saved_list(valid_asins)
-            messagebox.showinfo("Success", f"Added {new_asins} new ASINs. Total saved: {total_asins}", parent=manager_window)
+            selected_list = selected_list_var.get()
+            total_asins, new_asins = add_asins_to_saved_list(valid_asins, selected_list)
+            messagebox.showinfo("Success", f"Added {new_asins} new ASINs to '{selected_list}'. Total in list: {total_asins}", parent=manager_window)
             
-            # Refresh the list
-            refresh_asin_list()
+            # Refresh all lists and update combobox
+            refresh_all_lists()
             asin_text.delete("1.0", tk.END)
         
-        ttk.Button(add_frame, text="Add ASINs", command=add_asins).pack(pady=(0, 10))
+        ttk.Button(add_asins_frame, text="Add ASINs", command=add_asins).pack(pady=(0, 10))
         
-        # Current ASINs section
-        list_frame = ttk.LabelFrame(main_frame, text="Saved ASINs", padding="10")
-        list_frame.pack(fill=tk.BOTH, expand=True)
+        # Manage Lists tab
+        manage_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(manage_frame, text="Manage Lists")
+        
+        # Lists overview
+        lists_frame = ttk.LabelFrame(manage_frame, text="ASIN Lists", padding="10")
+        lists_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Create treeview for lists
+        columns = ('List Name', 'ASIN Count', 'Description')
+        lists_tree = ttk.Treeview(lists_frame, columns=columns, show='headings', height=15)
+        
+        for col in columns:
+            lists_tree.heading(col, text=col)
+            lists_tree.column(col, width=150)
+        
+        lists_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Scrollbar for treeview
+        tree_scrollbar = ttk.Scrollbar(lists_frame, orient=tk.VERTICAL, command=lists_tree.yview)
+        lists_tree.configure(yscrollcommand=tree_scrollbar.set)
+        tree_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        def refresh_lists_tree():
+            """Refresh the lists treeview"""
+            for item in lists_tree.get_children():
+                lists_tree.delete(item)
+            
+            lists_data = load_all_asin_lists()
+            for list_name, list_data in lists_data.items():
+                asin_count = len(list_data.get('asins', []))
+                description = list_data.get('description', '')
+                lists_tree.insert('', tk.END, values=(list_name, asin_count, description))
+        
+        def remove_selected_list():
+            """Remove selected list"""
+            selection = lists_tree.selection()
+            if not selection:
+                messagebox.showwarning("No Selection", "Please select a list to remove.", parent=manager_window)
+                return
+            
+            selected_item = lists_tree.item(selection[0])
+            list_name = selected_item['values'][0]
+            
+            if messagebox.askyesno("Confirm", f"Are you sure you want to remove the list '{list_name}'?", parent=manager_window):
+                lists_data = load_all_asin_lists()
+                if list_name in lists_data:
+                    del lists_data[list_name]
+                    if save_asin_lists(lists_data):
+                        messagebox.showinfo("Success", f"Removed list: {list_name}", parent=manager_window)
+                        refresh_lists_tree()
+                        refresh_all_lists()
+                    else:
+                        messagebox.showerror("Error", "Failed to remove list.", parent=manager_window)
+        
+        def clear_selected_list():
+            """Clear ASINs from selected list"""
+            selection = lists_tree.selection()
+            if not selection:
+                messagebox.showwarning("No Selection", "Please select a list to clear.", parent=manager_window)
+                return
+            
+            selected_item = lists_tree.item(selection[0])
+            list_name = selected_item['values'][0]
+            
+            if messagebox.askyesno("Confirm", f"Are you sure you want to clear all ASINs from '{list_name}'?", parent=manager_window):
+                lists_data = load_all_asin_lists()
+                if list_name in lists_data:
+                    lists_data[list_name]['asins'] = []
+                    if save_asin_lists(lists_data):
+                        messagebox.showinfo("Success", f"Cleared list: {list_name}", parent=manager_window)
+                        refresh_lists_tree()
+                        refresh_all_lists()
+                    else:
+                        messagebox.showerror("Error", "Failed to clear list.", parent=manager_window)
+        
+        # Buttons for list management
+        list_buttons_frame = ttk.Frame(manage_frame)
+        list_buttons_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        ttk.Button(list_buttons_frame, text="Remove Selected List", command=remove_selected_list).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(list_buttons_frame, text="Clear Selected List", command=clear_selected_list).pack(side=tk.LEFT)
+        
+        # All ASINs tab
+        all_asins_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(all_asins_frame, text="All ASINs")
         
         # ASIN listbox with scrollbar
-        listbox_frame = ttk.Frame(list_frame)
-        listbox_frame.pack(fill=tk.BOTH, expand=True)
+        asin_listbox_frame = ttk.Frame(all_asins_frame)
+        asin_listbox_frame.pack(fill=tk.BOTH, expand=True)
         
-        asin_listbox = tk.Listbox(listbox_frame, selectmode=tk.SINGLE)
-        scrollbar = ttk.Scrollbar(listbox_frame, orient=tk.VERTICAL, command=asin_listbox.yview)
-        asin_listbox.configure(yscrollcommand=scrollbar.set)
+        asin_listbox = tk.Listbox(asin_listbox_frame, selectmode=tk.SINGLE, height=20)
+        asin_scrollbar = ttk.Scrollbar(asin_listbox_frame, orient=tk.VERTICAL, command=asin_listbox.yview)
+        asin_listbox.configure(yscrollcommand=asin_scrollbar.set)
         
         asin_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        asin_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         def refresh_asin_list():
             """Refresh the ASIN listbox"""
@@ -200,40 +369,66 @@ def get_user_input():
                 asin_listbox.insert(tk.END, asin)
         
         def remove_selected_asin():
-            """Remove selected ASIN from list"""
+            """Remove selected ASIN from all lists"""
             selection = asin_listbox.curselection()
             if not selection:
                 messagebox.showwarning("No Selection", "Please select an ASIN to remove.", parent=manager_window)
                 return
             
             selected_asin = asin_listbox.get(selection[0])
-            current_asins = load_saved_asins()
-            current_asins.remove(selected_asin)
+            lists_data = load_all_asin_lists()
             
-            if save_asins_to_file(current_asins):
-                messagebox.showinfo("Success", f"Removed ASIN: {selected_asin}", parent=manager_window)
+            # Remove ASIN from all lists
+            removed_from = []
+            for list_name, list_data in lists_data.items():
+                if selected_asin in list_data.get('asins', []):
+                    list_data['asins'].remove(selected_asin)
+                    removed_from.append(list_name)
+            
+            if removed_from and save_asin_lists(lists_data):
+                messagebox.showinfo("Success", f"Removed ASIN {selected_asin} from: {', '.join(removed_from)}", parent=manager_window)
                 refresh_asin_list()
+                refresh_lists_tree()
             else:
                 messagebox.showerror("Error", "Failed to remove ASIN.", parent=manager_window)
         
         def clear_all_asins():
             """Clear all saved ASINs"""
             if messagebox.askyesno("Confirm", "Are you sure you want to remove all saved ASINs?", parent=manager_window):
-                if save_asins_to_file([]):
+                if save_asin_lists({}):
                     messagebox.showinfo("Success", "All ASINs removed.", parent=manager_window)
                     refresh_asin_list()
+                    refresh_lists_tree()
                 else:
                     messagebox.showerror("Error", "Failed to clear ASINs.", parent=manager_window)
         
         # Buttons for ASIN management
-        button_frame = ttk.Frame(list_frame)
-        button_frame.pack(fill=tk.X, pady=(10, 0))
+        asin_buttons_frame = ttk.Frame(all_asins_frame)
+        asin_buttons_frame.pack(fill=tk.X, pady=(10, 0))
         
-        ttk.Button(button_frame, text="Remove Selected", command=remove_selected_asin).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(button_frame, text="Clear All", command=clear_all_asins).pack(side=tk.LEFT)
+        ttk.Button(asin_buttons_frame, text="Remove Selected ASIN", command=remove_selected_asin).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(asin_buttons_frame, text="Clear All ASINs", command=clear_all_asins).pack(side=tk.LEFT)
+        
+        def refresh_all_lists():
+            """Refresh all list displays"""
+            refresh_lists_tree()
+            refresh_asin_list()
+            # Update combobox values
+            lists_data = load_all_asin_lists()
+            list_names = list(lists_data.keys()) if lists_data else ["Default List"]
+            list_combobox['values'] = list_names
+            if selected_list_var.get() not in list_names:
+                selected_list_var.set(list_names[0] if list_names else "Default List")
+            # Update main window combobox
+            update_main_combobox()
+        
+        def update_main_combobox():
+            """Update the main window combobox with current ASINs"""
+            all_asins = load_saved_asins()
+            asin_combobox['values'] = sorted(all_asins)
         
         # Initial load
-        refresh_asin_list()
+        refresh_all_lists()
         
         # Close button
         ttk.Button(main_frame, text="Close", command=manager_window.destroy).pack(pady=(20, 0))
@@ -241,12 +436,14 @@ def get_user_input():
     def update_asin_selection():
         """Update ASIN input based on selection mode"""
         if asin_input_mode.get() == "select":
-            # Enable combobox, disable manual entry
+            # Show combobox, hide manual entry
+            asin_combobox.pack(fill=tk.X, expand=True)
+            asin_entry.pack_forget()
             asin_combobox.config(state="readonly")
-            asin_entry.config(state="disabled")
         else:
-            # Enable manual entry, disable combobox
-            asin_combobox.config(state="disabled")
+            # Show manual entry, hide combobox
+            asin_entry.pack(fill=tk.X, expand=True)
+            asin_combobox.pack_forget()
             asin_entry.config(state="normal")
     
     # Validation function
@@ -340,14 +537,18 @@ def get_user_input():
     # ASIN Input
     ttk.Label(main_frame, text="ASIN:", font=("Arial", 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
     
+    # Create a frame to hold the ASIN input widgets
+    asin_input_frame = ttk.Frame(main_frame)
+    asin_input_frame.grid(row=2, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+    
     # Manual entry
-    asin_entry = ttk.Entry(main_frame, textvariable=asin_var, width=30)
-    asin_entry.grid(row=2, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+    asin_entry = ttk.Entry(asin_input_frame, textvariable=asin_var, width=30)
+    asin_entry.pack(fill=tk.X, expand=True)
     
     # Combobox for selection
     saved_asins = load_saved_asins()
-    asin_combobox = ttk.Combobox(main_frame, textvariable=asin_var, values=saved_asins, state="disabled", width=30)
-    asin_combobox.grid(row=2, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+    asin_combobox = ttk.Combobox(asin_input_frame, textvariable=asin_var, values=saved_asins, state="disabled", width=30)
+    asin_combobox.pack(fill=tk.X, expand=True)
     
     # ASIN Manager Button
     ttk.Button(main_frame, text="Manage ASIN List", command=open_asin_manager).grid(row=3, column=0, columnspan=3, pady=(5, 10))
