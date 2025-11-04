@@ -1,2 +1,5 @@
 .env.local
 saved_asins.json
+__pycache__/
+*.pyc
+*.pyo
