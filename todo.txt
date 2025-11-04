@@ -1,5 +1,7 @@
+- Add a menu so that the script doesn't close after running a task.
 - Add list of ASINS so it's a scrollable select list when the script runs
 - Glance views adjusted BB
 - Add an option to input multiple ASINs and get results for them for the selected months.
 - Merge all scripts into one experience
-
+- Check B00BGIVI1K miscalculating buybox for August 2025
+Likely related with Amazon having it since begining of month and not being atributed for it.
