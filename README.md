@@ -35,32 +35,46 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Buybox Analysis
+### Quick Start (Unified Menu)
 1. Add your Keepa API key to a `.env.local` file:
    ```
    Keepa_API_KEY=YOUR_KEEPA_API_KEY
    ```
-2. Run the buybox tracker:
+2. Run the unified menu:
    ```
-   python buybox_amazon_percent.py
+   python main.py
    ```
-3. Enter the ASIN, year, and months when prompted.
-4. View results in the terminal. Optionally export the data to CSV.
+3. Select the tracking tool you want to use from the menu:
+   - **Buybox Tracker**: Analyze Amazon buybox history
+   - **Sales Rank Analyzer**: Track sales rank trends
 
-### Sales Rank Analysis
-1. Ensure your Keepa API key is in the `.env.local` file
-2. Run the sales rank analyzer:
-   ```
-   python sales_rank_analyzer.py
-   ```
-3. Enter the ASIN and number of days to analyze when prompted.
-4. View detailed sales rank statistics and history.
+### Individual Tool Usage
+
+#### Buybox Analysis
+Run directly:
+```
+python buybox_amazon_percent.py
+```
+- Enter the ASIN, year, and months when prompted
+- View results in the GUI window
+- Optionally export the data to CSV
+- Supports batch processing of multiple ASINs
+
+#### Sales Rank Analysis
+Run directly:
+```
+python sales_rank_analyzer.py
+```
+- Enter the ASIN and number of days to analyze when prompted
+- View detailed sales rank statistics and history
+- Optionally export full history to CSV
 
 ## Files
+- `main.py`: Unified menu for accessing all tracking tools
 - `buybox_amazon_percent.py`: Main script for buybox analysis
 - `sales_rank_analyzer.py`: Script for sales rank analysis
 - `requirements.txt`: Python dependencies
-- `.env.local`: Your Keepa API key
+- `.env.local`: Your Keepa API key (not included in repository)
 
 ## Keepa API Limitations
 
