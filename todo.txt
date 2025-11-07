@@ -1,4 +1,4 @@
-- Add a menu so that the script doesn't close after running a task.
+- A way to easy share and load ASIN lists
 - Add list of ASINS so it's a scrollable select list when the script runs
 - Glance views adjusted BB
 - Add an option to input multiple ASINs and get results for them for the selected months.

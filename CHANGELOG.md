@@ -1,5 +1,33 @@
 # Changelog
 
+## 2025-11-07
+- **NEW FEATURE**: Current Buybox Owners Lookup Tool
+  - Added new "Current Buybox Owners" feature to fetch real-time buybox ownership data
+  - Implemented `get_current_buybox_owner()` method to retrieve current owner for any ASIN
+  - Returns current owner ID, owner type (Amazon/3rd Party), last update timestamp, and product title
+  - Created dedicated input interface with single and batch processing modes
+  - Added support for loading ASINs from saved lists or manual entry
+  - Implemented tabular results display showing all ownership details at a glance
+  - Added CSV export functionality for current owner data
+  - Integrated progress tracking for batch owner lookups
+- **UI IMPROVEMENTS**: Enhanced user interface and usability
+  - Doubled main menu window size from 500x500 to 1000x1000 for better visibility
+  - Added prominent Submit button within batch processing frame for improved workflow
+  - Removed exit confirmation dialog for smoother application closure
+  - Enhanced batch mode with dedicated submit button after load operations
+  - Improved button placement and layout consistency across all windows
+- **MAIN MENU**: Added new tool to unified application interface
+  - Integrated "Current Buybox Owners" button in main menu with descriptive tooltip
+  - Maintained consistent design pattern with existing tools (Buybox Analyzer, Sales Rank Analyzer)
+  - Added proper error handling and user feedback for all operations
+  - Implemented return-to-menu workflow after completion
+- **CODE QUALITY**: Architecture improvements and maintainability
+  - Extended BuyboxAnalyzer class with new methods following existing patterns
+  - Reused existing ASIN validation and management infrastructure
+  - Maintained Single Responsibility Principle across all modules
+  - Added comprehensive error handling for API failures and edge cases
+  - Implemented consistent data structure returns for easy integration
+
 ## 2025-01-27
 - **NEW FEATURE**: Implemented batch processing functionality for multiple ASINs
   - Added "Batch Processing" mode alongside existing "Single ASIN" mode

@@ -46,13 +46,13 @@ class KeepaTrackerApp:
         # Create the main window
         self.root = tk.Tk()
         self.root.title("Keepa API Tracker")
-        self.root.geometry(f'500x400+{mouse_x}+{mouse_y}')
-        
+        self.root.geometry(f'1000x1000+{mouse_x}+{mouse_y}')
+
         # Center the window on screen
         self.root.update_idletasks()
-        x = (self.root.winfo_screenwidth() // 2) - (500 // 2)
-        y = (self.root.winfo_screenheight() // 2) - (400 // 2)
-        self.root.geometry(f'500x400+{x}+{y}')
+        x = (self.root.winfo_screenwidth() // 2) - (1000 // 2)
+        y = (self.root.winfo_screenheight() // 2) - (1000 // 2)
+        self.root.geometry(f'1000x1000+{x}+{y}')
         
         # Make window stay on top initially, then allow normal behavior
         self.root.lift()
@@ -101,7 +101,25 @@ class KeepaTrackerApp:
             foreground="gray"
         )
         buybox_desc.pack(pady=(0, 10))
-        
+
+        # Current Buybox Owners Button
+        current_owners_btn = ttk.Button(
+            button_frame,
+            text="Current Buybox Owners",
+            command=self.run_current_buybox_owners,
+            width=25
+        )
+        current_owners_btn.pack(pady=10)
+
+        # Add tooltip/description for current owners
+        current_owners_desc = ttk.Label(
+            button_frame,
+            text="Get current buybox owner for list of ASINs",
+            font=("Arial", 9),
+            foreground="gray"
+        )
+        current_owners_desc.pack(pady=(0, 10))
+
         # Sales Rank Analyzer Button
         sales_rank_btn = ttk.Button(
             button_frame,
@@ -172,6 +190,40 @@ class KeepaTrackerApp:
                 parent=self.root
             )
     
+    def run_current_buybox_owners(self):
+        """
+        Runs the current buybox owners tool.
+        After completion, returns to the main menu.
+        """
+        try:
+            # Get user input for current owner lookup
+            user_input = self.buybox_analyzer.get_current_owners_input(parent_window=self.root)
+
+            if user_input is None:
+                # User cancelled, return to menu
+                return
+
+            asins, export_csv = user_input
+
+            # Process and display results
+            self.buybox_analyzer.process_and_display_current_owners(
+                asins, export_csv, parent_window=self.root
+            )
+
+            # Return to menu after results window is closed
+            messagebox.showinfo(
+                "Complete",
+                "Current buybox owner lookup complete. Returning to main menu.",
+                parent=self.root
+            )
+
+        except Exception as e:
+            messagebox.showerror(
+                "Error",
+                f"An error occurred during current owner lookup:\n{str(e)}",
+                parent=self.root
+            )
+
     def run_sales_rank_analyzer(self):
         """
         Runs the sales rank analyzer tool.
@@ -180,25 +232,25 @@ class KeepaTrackerApp:
         try:
             # Get user input for sales rank analysis
             user_input = self.sales_rank_analyzer.get_user_input(parent_window=self.root)
-            
+
             if user_input is None:
                 # User cancelled, return to menu
                 return
-            
+
             asin, days, export_csv = user_input
-            
+
             # Process and display results
             self.sales_rank_analyzer.process_and_display_results(
                 asin, days, export_csv, parent_window=self.root
             )
-            
+
             # Return to menu after results window is closed
             messagebox.showinfo(
-                "Complete", 
+                "Complete",
                 "Sales rank analysis complete. Returning to main menu.",
                 parent=self.root
             )
-            
+
         except Exception as e:
             messagebox.showerror(
                 "Error",
@@ -208,8 +260,7 @@ class KeepaTrackerApp:
     
     def exit_application(self):
         """Exits the application"""
-        if messagebox.askyesno("Exit", "Are you sure you want to exit?", parent=self.root):
-            self.root.destroy()
+        self.root.destroy()
     
     def run(self):
         """
