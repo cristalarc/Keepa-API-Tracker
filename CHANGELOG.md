@@ -10,23 +10,49 @@
   - Implemented tabular results display showing all ownership details at a glance
   - Added CSV export functionality for current owner data
   - Integrated progress tracking for batch owner lookups
+- **NEW FEATURE**: ASIN Manager as Standalone Tool
+  - Added "ASIN Manager" button to main menu for easy access
+  - Created standalone ASIN Manager window (900x700) with enhanced functionality
+  - Organized interface with four tabs: Add ASINs, Manage Lists, Edit List, and All ASINs
+  - Implemented comprehensive ASIN list management with create, remove, and clear operations
+- **NEW FEATURE**: Import/Export ASIN Lists
+  - Added export functionality to share ASIN lists in JSON format
+  - Export single selected list or all lists at once
+  - Implemented smart import with conflict resolution options:
+    - Merge: Combine imported ASINs with existing lists (no duplicates)
+    - Replace: Overwrite existing lists with imported data
+    - Skip: Only import non-conflicting lists
+  - JSON format ensures compatibility and easy sharing between users
+  - Export includes list metadata (descriptions, ASIN counts)
+- **NEW FEATURE**: Edit List Tab for Advanced List Management
+  - Added dedicated "Edit List" tab in ASIN Manager for comprehensive editing
+  - Implemented list renaming capability with duplicate name validation
+  - Added description editing with real-time updates
+  - Created ASIN viewer showing all ASINs in selected list with count display
+  - Implemented multi-select ASIN removal (using EXTENDED selectmode)
+  - Added single ASIN addition with validation and duplicate checking
+  - Auto-refresh functionality keeps Edit List tab synchronized with other operations
+  - Handles edge cases when lists are renamed or deleted from other tabs
 - **UI IMPROVEMENTS**: Enhanced user interface and usability
   - Doubled main menu window size from 500x500 to 1000x1000 for better visibility
   - Added prominent Submit button within batch processing frame for improved workflow
   - Removed exit confirmation dialog for smoother application closure
   - Enhanced batch mode with dedicated submit button after load operations
   - Improved button placement and layout consistency across all windows
-- **MAIN MENU**: Added new tool to unified application interface
-  - Integrated "Current Buybox Owners" button in main menu with descriptive tooltip
-  - Maintained consistent design pattern with existing tools (Buybox Analyzer, Sales Rank Analyzer)
+  - Larger text areas in ASIN Manager for better usability
+- **MAIN MENU**: Expanded unified application interface
+  - Integrated "Current Buybox Owners" button with descriptive tooltip
+  - Added "ASIN Manager" button for centralized list management
+  - Maintained consistent design pattern across all tools
   - Added proper error handling and user feedback for all operations
   - Implemented return-to-menu workflow after completion
 - **CODE QUALITY**: Architecture improvements and maintainability
   - Extended BuyboxAnalyzer class with new methods following existing patterns
-  - Reused existing ASIN validation and management infrastructure
+  - Centralized ASIN management functions for reuse across application
   - Maintained Single Responsibility Principle across all modules
-  - Added comprehensive error handling for API failures and edge cases
+  - Added comprehensive error handling for API failures, file I/O, and edge cases
   - Implemented consistent data structure returns for easy integration
+  - Enhanced import functionality with intelligent conflict resolution
 
 ## 2025-01-27
 - **NEW FEATURE**: Implemented batch processing functionality for multiple ASINs
