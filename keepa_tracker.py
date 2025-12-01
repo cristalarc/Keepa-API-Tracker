@@ -12,6 +12,7 @@ import pyautogui
 import json
 from buybox_analyzer import BuyboxAnalyzer
 from sales_rank_module import SalesRankAnalyzer
+from debug_mode import DebugViewer
 from asin_manager import (
     load_all_asin_lists, save_asin_lists, validate_asin_list,
     add_asins_to_saved_list, load_saved_asins
@@ -40,6 +41,7 @@ class KeepaTrackerApp:
         self.root = None
         self.buybox_analyzer = BuyboxAnalyzer(KEEPA_API_KEY)
         self.sales_rank_analyzer = SalesRankAnalyzer(KEEPA_API_KEY)
+        self.debug_viewer = DebugViewer(KEEPA_API_KEY)
     
     def create_main_menu(self):
         """
@@ -160,6 +162,27 @@ class KeepaTrackerApp:
             foreground="gray"
         )
         asin_manager_desc.pack(pady=(0, 10))
+
+        # Separator for Debug Mode section
+        ttk.Separator(button_frame, orient='horizontal').pack(fill=tk.X, pady=10)
+
+        # Debug Mode Button
+        debug_mode_btn = ttk.Button(
+            button_frame,
+            text="Debug Mode",
+            command=self.run_debug_mode,
+            width=25
+        )
+        debug_mode_btn.pack(pady=10)
+
+        # Add tooltip/description for debug mode
+        debug_mode_desc = ttk.Label(
+            button_frame,
+            text="View raw API data and processed results for verification",
+            font=("Arial", 9),
+            foreground="gray"
+        )
+        debug_mode_desc.pack(pady=(0, 10))
 
         # Exit Button
         exit_btn = ttk.Button(
@@ -867,6 +890,32 @@ class KeepaTrackerApp:
             messagebox.showerror(
                 "Error",
                 f"An error occurred in ASIN Manager:\n{str(e)}",
+                parent=self.root
+            )
+
+    def run_debug_mode(self):
+        """
+        Runs the debug mode tool.
+        Allows users to view raw API data and processed results for verification.
+        After completion, returns to the main menu.
+        """
+        try:
+            # Run the debug analysis using the DebugViewer
+            result = self.debug_viewer.run_debug_analysis(parent_window=self.root)
+            
+            if result:
+                # Analysis completed successfully
+                messagebox.showinfo(
+                    "Complete",
+                    "Debug analysis complete. Returning to main menu.",
+                    parent=self.root
+                )
+            # If result is False, user cancelled - no message needed
+            
+        except Exception as e:
+            messagebox.showerror(
+                "Error",
+                f"An error occurred during debug analysis:\n{str(e)}",
                 parent=self.root
             )
 
