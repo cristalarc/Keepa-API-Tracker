@@ -6,7 +6,8 @@ It follows the Single Responsibility Principle by focusing solely on buybox anal
 
 import requests
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
+import pytz
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext, simpledialog
 import pyautogui
@@ -18,6 +19,87 @@ from asin_manager import (
 
 # Amazon's seller ID constant
 AMAZON_SELLER_ID = 'ATVPDKIKX0DER'
+
+# US Eastern timezone for traffic weight calculations
+US_EASTERN = pytz.timezone('US/Eastern')
+
+# Hourly traffic weights based on Amazon.com browsing patterns (US Eastern Time)
+# Values represent estimated percentage of daily traffic for each hour
+HOURLY_TRAFFIC_WEIGHTS = {
+    0: 0.015,   # 12 AM - 1 AM
+    1: 0.010,   # 1 AM - 2 AM
+    2: 0.008,   # 2 AM - 3 AM
+    3: 0.007,   # 3 AM - 4 AM
+    4: 0.010,   # 4 AM - 5 AM
+    5: 0.018,   # 5 AM - 6 AM
+    6: 0.030,   # 6 AM - 7 AM
+    7: 0.050,   # 7 AM - 8 AM
+    8: 0.065,   # 8 AM - 9 AM
+    9: 0.075,   # 9 AM - 10 AM
+    10: 0.080,  # 10 AM - 11 AM
+    11: 0.085,  # 11 AM - 12 PM (peak)
+    12: 0.080,  # 12 PM - 1 PM
+    13: 0.075,  # 1 PM - 2 PM
+    14: 0.070,  # 2 PM - 3 PM
+    15: 0.065,  # 3 PM - 4 PM
+    16: 0.065,  # 4 PM - 5 PM
+    17: 0.070,  # 5 PM - 6 PM
+    18: 0.075,  # 6 PM - 7 PM
+    19: 0.080,  # 7 PM - 8 PM (peak)
+    20: 0.075,  # 8 PM - 9 PM
+    21: 0.070,  # 9 PM - 10 PM
+    22: 0.050,  # 10 PM - 11 PM
+    23: 0.030,  # 11 PM - 12 AM
+}
+
+
+def calculate_weighted_minutes(start_dt, end_dt, traffic_weights=HOURLY_TRAFFIC_WEIGHTS):
+    """
+    Calculate traffic-weighted minutes for a time interval.
+    Converts UTC timestamps to US Eastern time before applying weights.
+
+    Args:
+        start_dt: Start datetime (UTC, timezone-naive from Keepa)
+        end_dt: End datetime (UTC, timezone-naive from Keepa)
+        traffic_weights: Dict mapping hour (0-23) to weight (0-1)
+
+    Returns:
+        float: Weighted minutes value
+    """
+    # Make timestamps timezone-aware (Keepa uses UTC)
+    utc = pytz.UTC
+    if start_dt.tzinfo is None:
+        start_dt = utc.localize(start_dt)
+    if end_dt.tzinfo is None:
+        end_dt = utc.localize(end_dt)
+
+    # Convert to US Eastern for traffic weighting
+    start_et = start_dt.astimezone(US_EASTERN)
+    end_et = end_dt.astimezone(US_EASTERN)
+
+    weighted_total = 0.0
+    current = start_et
+
+    while current < end_et:
+        # Get the end of the current hour
+        next_hour = current.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+
+        # Determine the end of this segment (either end of hour or end of interval)
+        segment_end = min(next_hour, end_et)
+
+        # Calculate minutes in this segment
+        segment_minutes = (segment_end - current).total_seconds() / 60
+
+        # Get the weight for this hour
+        hour_weight = traffic_weights.get(current.hour, 0.05)  # Default to 5% if missing
+
+        # Add weighted minutes
+        weighted_total += segment_minutes * hour_weight
+
+        # Move to next segment
+        current = segment_end
+
+    return weighted_total
 
 
 class BuyboxAnalyzer:
@@ -152,10 +234,13 @@ class BuyboxAnalyzer:
                         'month': month,
                         'amazon_percent_count': None,
                         'amazon_percent_time': None,
+                        'amazon_percent_glance_views': None,
                         'total_count': 0,
                         'amazon_count': 0,
                         'amazon_time_minutes': None,
-                        'total_time_minutes': None
+                        'total_time_minutes': None,
+                        'amazon_weighted_minutes': None,
+                        'total_weighted_minutes': None
                     })
                     continue
                 
@@ -164,27 +249,41 @@ class BuyboxAnalyzer:
                 total_count = len(month_df)
                 percent_count = (amazon_count / total_count) * 100
                 
-                # Time-based calculation
+                # Time-based and Glance-views calculation
                 amazon_time = 0
                 total_time = 0
+                amazon_weighted_time = 0
+                total_weighted_time = 0
+
                 for i in range(len(month_df) - 1):
                     t1 = month_df.loc[i, 'datetime']
                     t2 = month_df.loc[i + 1, 'datetime']
                     delta = (t2 - t1).total_seconds() / 60  # minutes
                     total_time += delta
+
+                    # Calculate traffic-weighted minutes for this interval
+                    weighted_mins = calculate_weighted_minutes(t1, t2)
+                    total_weighted_time += weighted_mins
+
                     if month_df.loc[i, 'seller_id'] == AMAZON_SELLER_ID:
                         amazon_time += delta
-                
+                        amazon_weighted_time += weighted_mins
+
                 percent_time = (amazon_time / total_time) * 100 if total_time > 0 else None
+                percent_glance_views = (amazon_weighted_time / total_weighted_time) * 100 if total_weighted_time > 0 else None
+
                 results.append({
                     'asin': asin,
                     'month': month,
                     'amazon_percent_count': percent_count,
                     'amazon_percent_time': percent_time,
+                    'amazon_percent_glance_views': percent_glance_views,
                     'total_count': total_count,
                     'amazon_count': amazon_count,
                     'amazon_time_minutes': amazon_time,
-                    'total_time_minutes': total_time
+                    'total_time_minutes': total_time,
+                    'amazon_weighted_minutes': amazon_weighted_time,
+                    'total_weighted_minutes': total_weighted_time
                 })
             
             return results, None
@@ -917,6 +1016,7 @@ class BuyboxAnalyzer:
                     output_lines.append(f'Amazon match count: {r["amazon_count"]} / {r["total_count"]}')
                     output_lines.append(f'Amazon held the buybox (by count): {r["amazon_percent_count"]:.2f}%')
                     output_lines.append(f'Amazon held the buybox (by time): {r["amazon_percent_time"]:.2f}%')
+                    output_lines.append(f'Amazon held the buybox (by glance views): {r["amazon_percent_glance_views"]:.2f}%')
                     output_lines.append(f'Amazon time held (min): {r["amazon_time_minutes"]:.2f} / {r["total_time_minutes"]:.2f}')
             output_lines.append('-' * 40)
         else:
@@ -945,6 +1045,7 @@ class BuyboxAnalyzer:
                     else:
                         output_lines.append(f'  Amazon held the buybox (by count): {r["amazon_percent_count"]:.2f}%')
                         output_lines.append(f'  Amazon held the buybox (by time): {r["amazon_percent_time"]:.2f}%')
+                        output_lines.append(f'  Amazon held the buybox (by glance views): {r["amazon_percent_glance_views"]:.2f}%')
                     output_lines.append('')
             
             if errors:
