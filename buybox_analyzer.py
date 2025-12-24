@@ -846,12 +846,37 @@ class BuyboxAnalyzer:
                 print("All ASINs processed successfully!")
         
         # Show results in a dedicated tkinter window
-        mouse_x, mouse_y = pyautogui.position()
         result_root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
-        result_root.geometry(f'1200x800+{mouse_x}+{mouse_y}')
         result_root.title('Buybox Analysis Results')
+
+        # CRITICAL: Set resizable BEFORE any geometry settings
+        result_root.resizable(True, True)
+
+        # Remove transient to allow independent window controls
+        if parent_window:
+            result_root.transient()  # Clear transient relationship
+
+        # Make window very large - almost full screen
+        result_root.update_idletasks()
+        screen_width = result_root.winfo_screenwidth()
+        screen_height = result_root.winfo_screenheight()
+        # Use 95% of screen dimensions with much larger minimums
+        window_width = int(screen_width * 0.95)
+        window_height = int(screen_height * 0.90)
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        result_root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+
+        # Set minimum size AFTER geometry
+        result_root.minsize(1200, 800)
+
+        # Show window on top initially, then allow normal behavior
         result_root.lift()
         result_root.attributes('-topmost', True)
+        result_root.after_idle(lambda: result_root.attributes('-topmost', False))
+
+        # Force update to apply all settings
+        result_root.update()
         
         text = scrolledtext.ScrolledText(result_root, wrap=tk.WORD, width=80, height=30)
         text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
@@ -947,21 +972,28 @@ class BuyboxAnalyzer:
         Returns:
             tuple: (asins, export_preference) or None if cancelled
         """
-        mouse_x, mouse_y = pyautogui.position()
-
         # Create the main input window
         root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
         root.title("Current Buybox Owners - Input")
-        root.geometry(f'500x400+{mouse_x}+{mouse_y}')
+        
+        # IMPORTANT: Enable resizing so user can expand the window if needed
+        root.resizable(True, True)
+        
+        # Set minimum size to ensure UI elements are visible
+        root.minsize(700, 650)
+        
+        # Center the window on screen with a larger default size
+        root.update_idletasks()
+        window_width = 750
+        window_height = 700
+        x = (root.winfo_screenwidth() // 2) - (window_width // 2)
+        y = (root.winfo_screenheight() // 2) - (window_height // 2)
+        root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+        
+        # Show window on top initially
         root.lift()
         root.attributes('-topmost', True)
-        root.resizable(False, False)
-
-        # Center the window on screen
-        root.update_idletasks()
-        x = (root.winfo_screenwidth() // 2) - (600 // 2)
-        y = (root.winfo_screenheight() // 2) - (500 // 2)
-        root.geometry(f'600x500+{x}+{y}')
+        root.after_idle(lambda: root.attributes('-topmost', False))
 
         # Variables to store input values
         asin_var = tk.StringVar()
@@ -1217,7 +1249,8 @@ class BuyboxAnalyzer:
 
         def update_batch_mode():
             if batch_mode_var.get():
-                batch_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(5, 10), padx=(0, 0))
+                # Use all sticky directions (N, S, E, W) so it expands when window is resized
+                batch_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(5, 10), padx=(0, 0))
                 asin_label.grid_remove()
                 asin_input_frame.grid_remove()
                 asin_manager_button.grid_remove()
@@ -1272,10 +1305,13 @@ class BuyboxAnalyzer:
         main_frame = ttk.Frame(root, padding="20")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
+        # Configure grid weights for proper resizing
         root.columnconfigure(0, weight=1)
         root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
         main_frame.columnconfigure(2, weight=1)
+        # Allow row 3 (where batch_frame is placed) to expand vertically when resizing
+        main_frame.rowconfigure(3, weight=1)
 
         # Title
         title_label = ttk.Label(main_frame, text="Current Buybox Owners", font=("Arial", 16, "bold"))
@@ -1322,8 +1358,18 @@ class BuyboxAnalyzer:
 
         ttk.Label(batch_frame, text="Enter ASINs (comma, space, or newline separated):").pack(anchor=tk.W)
 
-        batch_text_widget = tk.Text(batch_frame, height=6, width=50)
-        batch_text_widget.pack(fill=tk.X, pady=(5, 10))
+        # Create a frame for the text widget and scrollbar
+        batch_text_frame = ttk.Frame(batch_frame)
+        batch_text_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 10))
+        
+        # Create scrollbar for the text widget
+        batch_scrollbar = ttk.Scrollbar(batch_text_frame, orient=tk.VERTICAL)
+        batch_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Larger text area (height=12 instead of 6) with scrollbar
+        batch_text_widget = tk.Text(batch_text_frame, height=12, width=50, yscrollcommand=batch_scrollbar.set)
+        batch_text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        batch_scrollbar.config(command=batch_text_widget.yview)
 
         # Quick load buttons
         batch_buttons_frame = ttk.Frame(batch_frame)
@@ -1482,12 +1528,37 @@ class BuyboxAnalyzer:
                 print("All ASINs processed successfully!")
 
         # Show results in a dedicated tkinter window
-        mouse_x, mouse_y = pyautogui.position()
         result_root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
-        result_root.geometry(f'1200x800+{mouse_x}+{mouse_y}')
         result_root.title('Current Buybox Owners')
+
+        # CRITICAL: Set resizable BEFORE any geometry settings
+        result_root.resizable(True, True)
+
+        # Remove transient to allow independent window controls
+        if parent_window:
+            result_root.transient()  # Clear transient relationship
+
+        # Make window very large - almost full screen
+        result_root.update_idletasks()
+        screen_width = result_root.winfo_screenwidth()
+        screen_height = result_root.winfo_screenheight()
+        # Use 95% of screen dimensions with much larger minimums
+        window_width = int(screen_width * 0.95)
+        window_height = int(screen_height * 0.90)
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        result_root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+
+        # Set minimum size AFTER geometry
+        result_root.minsize(1200, 800)
+
+        # Show window on top initially, then allow normal behavior
         result_root.lift()
         result_root.attributes('-topmost', True)
+        result_root.after_idle(lambda: result_root.attributes('-topmost', False))
+
+        # Force update to apply all settings
+        result_root.update()
 
         text = scrolledtext.ScrolledText(result_root, wrap=tk.WORD, width=80, height=30)
         text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
