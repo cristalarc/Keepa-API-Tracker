@@ -313,14 +313,24 @@ class KeepaTrackerApp:
             # Create ASIN Manager window
             manager_window = tk.Toplevel(self.root)
             manager_window.title("ASIN Manager")
-            manager_window.geometry("900x700")
             manager_window.transient(self.root)
+            
+            # IMPORTANT: Enable resizing so user can expand the window
+            manager_window.resizable(True, True)
+            
+            # Set minimum size
+            manager_window.minsize(800, 600)
 
-            # Center the window
+            # Center the window with a larger default size
             manager_window.update_idletasks()
-            x = (manager_window.winfo_screenwidth() // 2) - (900 // 2)
-            y = (manager_window.winfo_screenheight() // 2) - (700 // 2)
-            manager_window.geometry(f'900x700+{x}+{y}')
+            screen_width = manager_window.winfo_screenwidth()
+            screen_height = manager_window.winfo_screenheight()
+            # Use 75% of screen dimensions
+            window_width = min(int(screen_width * 0.75), 1200)
+            window_height = min(int(screen_height * 0.75), 900)
+            x = (screen_width // 2) - (window_width // 2)
+            y = (screen_height // 2) - (window_height // 2)
+            manager_window.geometry(f'{window_width}x{window_height}+{x}+{y}')
 
             # Load current ASIN lists
             lists_data = load_all_asin_lists()

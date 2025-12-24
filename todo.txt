@@ -3,11 +3,9 @@
 - A way to easy share and load ASIN lists
 - Glance views adjusted BB
 
-- Check B00BGIVI1K miscalculating buybox for August 2025
-Likely related with Amazon having it since begining of month and not being atributed for it.
-
 -- Processing ASINs window opens in main screen instead of active screen
--- Debug B00BGIWCV0 no sales rank data for november
+
+
 Bugs:
 Review B07SVPB4XX for month 2025-9. Why is it 47% when it should be closer to 90%
 Review B0BC9HSLQN for month 2025-9. Why is it 17.08% when it should be at least 60%

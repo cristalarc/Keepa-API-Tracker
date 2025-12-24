@@ -203,21 +203,28 @@ class BuyboxAnalyzer:
         Returns:
             tuple: (asins, year, months, export_preference) or None if cancelled
         """
-        mouse_x, mouse_y = pyautogui.position()
-        
         # Create the main input window
         root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
         root.title("Buybox Analyzer - Input")
-        root.geometry(f'500x500+{mouse_x}+{mouse_y}')
+        
+        # IMPORTANT: Enable resizing so user can expand the window if needed
+        root.resizable(True, True)
+        
+        # Set minimum size to ensure UI elements are visible
+        root.minsize(700, 650)
+        
+        # Center the window on screen with a larger default size
+        root.update_idletasks()
+        window_width = 750
+        window_height = 700
+        x = (root.winfo_screenwidth() // 2) - (window_width // 2)
+        y = (root.winfo_screenheight() // 2) - (window_height // 2)
+        root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+        
+        # Show window on top initially
         root.lift()
         root.attributes('-topmost', True)
-        root.resizable(False, False)
-        
-        # Center the window on screen
-        root.update_idletasks()
-        x = (root.winfo_screenwidth() // 2) - (600 // 2)
-        y = (root.winfo_screenheight() // 2) - (600 // 2)
-        root.geometry(f'600x600+{x}+{y}')
+        root.after_idle(lambda: root.attributes('-topmost', False))
         
         # Variables to store input values
         asin_var = tk.StringVar()
@@ -235,9 +242,20 @@ class BuyboxAnalyzer:
             """Open ASIN management window"""
             manager_window = tk.Toplevel(root)
             manager_window.title("ASIN Manager")
-            manager_window.geometry("800x600")
             manager_window.transient(root)
             manager_window.grab_set()
+            
+            # Enable resizing and set a reasonable default size
+            manager_window.resizable(True, True)
+            manager_window.minsize(700, 500)
+            
+            # Center the window with a larger default size
+            manager_window.update_idletasks()
+            window_width = 900
+            window_height = 700
+            x = (manager_window.winfo_screenwidth() // 2) - (window_width // 2)
+            y = (manager_window.winfo_screenheight() // 2) - (window_height // 2)
+            manager_window.geometry(f'{window_width}x{window_height}+{x}+{y}')
             
             # Load current ASIN lists
             lists_data = load_all_asin_lists()
@@ -693,15 +711,20 @@ class BuyboxAnalyzer:
             # Create a simple dialog to select list
             list_window = tk.Toplevel(root)
             list_window.title("Select List")
-            list_window.geometry("300x200")
             list_window.transient(root)
             list_window.grab_set()
             
-            # Center the list selection window
+            # Enable resizing and set minimum size
+            list_window.resizable(True, True)
+            list_window.minsize(300, 180)
+            
+            # Center the list selection window with a reasonable default size
             list_window.update_idletasks()
-            list_x = (list_window.winfo_screenwidth() // 2) - (300 // 2)
-            list_y = (list_window.winfo_screenheight() // 2) - (200 // 2)
-            list_window.geometry(f'300x200+{list_x}+{list_y}')
+            window_width = 400
+            window_height = 250
+            list_x = (list_window.winfo_screenwidth() // 2) - (window_width // 2)
+            list_y = (list_window.winfo_screenheight() // 2) - (window_height // 2)
+            list_window.geometry(f'{window_width}x{window_height}+{list_x}+{list_y}')
             
             ttk.Label(list_window, text="Select a list to load:").pack(pady=10)
             
@@ -1009,9 +1032,20 @@ class BuyboxAnalyzer:
             """Open ASIN management window"""
             manager_window = tk.Toplevel(root)
             manager_window.title("ASIN Manager")
-            manager_window.geometry("800x600")
             manager_window.transient(root)
             manager_window.grab_set()
+            
+            # Enable resizing and set a reasonable default size
+            manager_window.resizable(True, True)
+            manager_window.minsize(700, 500)
+            
+            # Center the window with a larger default size
+            manager_window.update_idletasks()
+            window_width = 900
+            window_height = 700
+            x = (manager_window.winfo_screenwidth() // 2) - (window_width // 2)
+            y = (manager_window.winfo_screenheight() // 2) - (window_height // 2)
+            manager_window.geometry(f'{window_width}x{window_height}+{x}+{y}')
 
             lists_data = load_all_asin_lists()
 
@@ -1391,14 +1425,20 @@ class BuyboxAnalyzer:
 
             list_window = tk.Toplevel(root)
             list_window.title("Select List")
-            list_window.geometry("300x200")
             list_window.transient(root)
             list_window.grab_set()
+            
+            # Enable resizing and set minimum size
+            list_window.resizable(True, True)
+            list_window.minsize(300, 180)
 
+            # Center the window with a reasonable default size
             list_window.update_idletasks()
-            list_x = (list_window.winfo_screenwidth() // 2) - (300 // 2)
-            list_y = (list_window.winfo_screenheight() // 2) - (200 // 2)
-            list_window.geometry(f'300x200+{list_x}+{list_y}')
+            window_width = 400
+            window_height = 250
+            list_x = (list_window.winfo_screenwidth() // 2) - (window_width // 2)
+            list_y = (list_window.winfo_screenheight() // 2) - (window_height // 2)
+            list_window.geometry(f'{window_width}x{window_height}+{list_x}+{list_y}')
 
             ttk.Label(list_window, text="Select a list to load:").pack(pady=10)
 

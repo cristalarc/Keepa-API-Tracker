@@ -1,5 +1,69 @@
 # Changelog
 
+## 2025-01-29
+- **BUG FIX**: Fixed Sales Rank Category Selection Logic
+  - Replaced scoring-based category selection with categoryTree-based selection
+  - Now correctly selects the most specific (deepest) category from the categoryTree hierarchy
+  - Uses the last item in categoryTree as the target category (most specific subcategory)
+  - Fixed issue where incorrect category was being selected, causing "no results available" errors
+  - Added fallback mechanism if target category not found in salesRanks data
+  - Improved category matching to handle both string and integer category IDs
+- **NEW FEATURE**: Category Name Display in Sales Rank Results
+  - Added category name and ID display in sales rank analysis results
+  - Shows the selected category name (e.g., "9V") and category ID in the output
+  - Helps users understand which category's sales rank data is being analyzed
+  - Category name extracted from categoryTree for accurate display
+- **DEBUGGING IMPROVEMENTS**: Enhanced Sales Rank Analyzer Debugging
+  - Added verbose mode to SalesRankAnalyzer class for detailed step-by-step debugging
+  - Implemented `_debug_print()` method for conditional debug output
+  - Added comprehensive debug logging throughout `parse_sales_rank_history()` method
+  - Debug output shows category tree traversal, category selection process, and data parsing details
+  - Added date range analysis in `calculate_sales_rank_stats()` to identify filtering issues
+  - Created `debug_sales_rank.py` standalone script for troubleshooting sales rank issues
+  - Debug script provides step-by-step analysis with detailed output for each processing stage
+- **CODE QUALITY**: Improved category selection architecture
+  - Maintained backward compatibility with existing functionality
+  - Enhanced error handling for edge cases (missing categoryTree, category not in salesRanks)
+  - Added category name lookup dictionary for efficient name resolution
+  - Improved code documentation explaining category selection logic
+
+## 2025-01-28
+- **NEW FEATURE**: Sales Rank Debugging in Debug Mode
+  - Extended Debug Mode to support Sales Rank Analyzer debugging alongside Buybox Analyzer
+  - Added `fetch_sales_rank_data()` method to fetch and analyze sales rank data from Keepa API
+  - Implemented comprehensive data source inspection for both `salesRanks` field (category-specific) and `csv[3]` field (main sales rank)
+  - Created intelligent date range analysis to identify why "no results available" occurs
+  - Added record counting for total data vs. data within requested time period
+  - Implemented category information extraction and display
+- **NEW FEATURE**: Diagnostic Summary for Sales Rank Troubleshooting
+  - Added dedicated "🔍 Diagnostic Summary" tab with comprehensive problem diagnosis
+  - Displays date range analysis showing cutoff dates and available data ranges
+  - Shows category breakdown with record counts for each sales rank category
+  - Provides clear warnings when data exists but falls outside requested period
+  - Includes actionable tips and solutions (e.g., "Try increasing the 'Days to analyze' value")
+  - Generates clear diagnosis explaining exactly why "no results available" appears
+- **NEW FEATURE**: Enhanced Debug Mode UI
+  - Added debug type selection (Buybox Analyzer vs. Sales Rank Analyzer)
+  - Added "Days to analyze" input field for sales rank debugging (dynamically shown/hidden)
+  - Updated window sizing to accommodate new options (750px height)
+  - Maintained consistent UI patterns with existing debug functionality
+- **NEW FEATURE**: Sample Data Tab for Sales Rank Debugging
+  - Added "📋 Sample Data" tab showing actual rank values from available data sources
+  - Displays most recent records from each category and main sales rank
+  - Helps users verify data quality and understand data structure
+- **DEBUGGING IMPROVEMENTS**: Enhanced troubleshooting capabilities
+  - Identifies when sales rank data exists but is older than requested period
+  - Distinguishes between "no data available" vs. "data outside period" scenarios
+  - Provides specific guidance based on diagnosis (increase days, check date ranges, etc.)
+  - Shows both total records and records within period for each data source
+  - Displays earliest and latest dates for available data to help users adjust their queries
+- **CODE QUALITY**: Maintained architecture principles
+  - Extended DebugViewer class with sales rank methods following existing patterns
+  - Maintained Single Responsibility Principle with separate display methods
+  - Added comprehensive error handling for API failures and data parsing issues
+  - Implemented consistent data structure returns matching existing debug functionality
+  - Enhanced code documentation with detailed method descriptions
+
 ## 2025-11-07
 - **NEW FEATURE**: Current Buybox Owners Lookup Tool
   - Added new "Current Buybox Owners" feature to fetch real-time buybox ownership data

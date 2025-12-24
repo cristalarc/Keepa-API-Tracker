@@ -18,15 +18,26 @@ class SalesRankAnalyzer:
     This follows the Single Responsibility Principle by focusing only on sales rank analysis.
     """
     
-    def __init__(self, api_key):
+    def __init__(self, api_key, verbose=False):
         """
         Initialize the analyzer with the Keepa API key.
         
         Args:
             api_key (str): The Keepa API key for authentication
+            verbose (bool): If True, print detailed debugging information
         """
         self.api_key = api_key
         self.keepa_epoch = datetime(2011, 1, 1)  # Keepa's epoch date
+        self.verbose = verbose  # Enable debug output when True
+        
+        # Store information about the last analyzed product
+        self.selected_category_id = None
+        self.selected_category_name = None
+    
+    def _debug_print(self, message):
+        """Print debug message if verbose mode is enabled."""
+        if self.verbose:
+            print(f"[DEBUG] {message}")
         
     def get_product_sales_rank(self, asin, domain=1):
         """
@@ -67,6 +78,9 @@ class SalesRankAnalyzer:
         """
         Parse sales rank history from Keepa product data.
         
+        Uses the categoryTree to find the most specific (deepest) category,
+        which is the last item in the category tree hierarchy.
+        
         Args:
             product_data (dict): Product data from Keepa API
             
@@ -74,53 +88,101 @@ class SalesRankAnalyzer:
             pandas.DataFrame: DataFrame with datetime and sales rank columns
         """
         if not product_data:
+            self._debug_print("parse_sales_rank_history: product_data is None/empty")
             return pd.DataFrame()
+        
+        self._debug_print(f"parse_sales_rank_history: Product title: {product_data.get('title', 'N/A')}")
             
         # Keepa provides sales rank data in the salesRanks field
         # Format: {"category_id": [timestamp1, rank1, timestamp2, rank2, ...]}
         sales_ranks_data = product_data.get('salesRanks', {})
         
+        self._debug_print(f"parse_sales_rank_history: salesRanks field type: {type(sales_ranks_data)}")
+        self._debug_print(f"parse_sales_rank_history: salesRanks keys: {list(sales_ranks_data.keys()) if sales_ranks_data else 'None'}")
+        
         if not sales_ranks_data:
+            self._debug_print("parse_sales_rank_history: salesRanks is empty - returning empty DataFrame")
             return pd.DataFrame()
         
-        # Find the category with the most reasonable sales rank values
-        # Sales ranks should typically be between 1 and 100,000
-        best_category_id = None
-        best_category_data = None
-        best_score = 0
+        # Get the categoryTree to find the most specific category
+        # The categoryTree is ordered from broad to specific, so the last item
+        # is the most specific (deepest) category for the product
+        category_tree = product_data.get('categoryTree', [])
         
-        for category_id, rank_data in sales_ranks_data.items():
-            if isinstance(rank_data, list) and len(rank_data) >= 2:
-                valid_ranks = [rank for rank in rank_data[1::2] if rank != -1]
-                if valid_ranks:
-                    # Calculate a score based on how reasonable the ranks are
-                    # Lower ranks (better sales) should be more common
-                    avg_rank = sum(valid_ranks) / len(valid_ranks)
-                    min_rank = min(valid_ranks)
-                    max_rank = max(valid_ranks)
-                    
-                    # Prefer categories with lower average ranks and reasonable ranges
-                    score = len(valid_ranks) * (100000 / avg_rank) if avg_rank > 0 else 0
-                    
-                    if score > best_score:
-                        best_score = score
-                        best_category_id = category_id
-                        best_category_data = rank_data
+        # Build a lookup dictionary for category names
+        category_names = {}
+        self._debug_print(f"parse_sales_rank_history: categoryTree has {len(category_tree)} levels")
+        for i, cat in enumerate(category_tree):
+            cat_id = cat.get('catId') if isinstance(cat, dict) else cat
+            cat_name = cat.get('name', 'Unknown') if isinstance(cat, dict) else 'Unknown'
+            category_names[str(cat_id)] = cat_name
+            self._debug_print(f"  Level {i+1}: {cat_name} (ID: {cat_id})")
         
-        if best_category_data:
-            sales_rank_data = best_category_data
-        else:
-            # Fallback to first category with data
+        # Reset selected category info
+        self.selected_category_id = None
+        self.selected_category_name = None
+        
+        # Find the target category - use the most specific (last) category from categoryTree
+        target_category_id = None
+        target_category_name = None
+        sales_rank_data = None
+        
+        if category_tree:
+            # Get the last (most specific) category from the tree
+            last_category = category_tree[-1]
+            # categoryTree entries can be dicts with 'catId' or just IDs
+            if isinstance(last_category, dict):
+                target_category_id = last_category.get('catId')
+                target_category_name = last_category.get('name', 'Unknown')
+            else:
+                target_category_id = last_category
+                target_category_name = 'Unknown'
+            
+            self._debug_print(f"parse_sales_rank_history: Target category from tree: {target_category_name} (ID: {target_category_id})")
+            
+            # Look for this category in salesRanks
+            # Note: salesRanks keys might be strings or integers depending on JSON parsing
+            target_category_str = str(target_category_id)
+            
+            for category_id, rank_data in sales_ranks_data.items():
+                if str(category_id) == target_category_str:
+                    if isinstance(rank_data, list) and len(rank_data) >= 2:
+                        sales_rank_data = rank_data
+                        # Store the selected category info
+                        self.selected_category_id = target_category_id
+                        self.selected_category_name = target_category_name
+                        self._debug_print(f"parse_sales_rank_history: Found target category {target_category_name} (ID: {target_category_id}) in salesRanks!")
+                        break
+            
+            if not sales_rank_data:
+                self._debug_print(f"parse_sales_rank_history: Target category {target_category_id} not found in salesRanks keys: {list(sales_ranks_data.keys())}")
+        
+        # Fallback: if target category not found, use the first available category with valid data
+        if not sales_rank_data:
+            self._debug_print("parse_sales_rank_history: Using fallback - selecting first available category with data")
             for category_id, rank_data in sales_ranks_data.items():
                 if isinstance(rank_data, list) and len(rank_data) >= 2:
-                    sales_rank_data = rank_data
-                    break
-            else:
+                    # Check if there's at least some valid (non -1) data
+                    valid_ranks = [r for r in rank_data[1::2] if r != -1]
+                    if valid_ranks:
+                        sales_rank_data = rank_data
+                        # Store fallback category info
+                        self.selected_category_id = category_id
+                        # Try to get the name from our lookup, otherwise use 'Unknown'
+                        self.selected_category_name = category_names.get(str(category_id), f"Category {category_id}")
+                        self._debug_print(f"parse_sales_rank_history: Fallback selected category: {self.selected_category_name} (ID: {category_id}, {len(valid_ranks)} valid ranks)")
+                        break
+            
+            if not sales_rank_data:
+                self._debug_print("parse_sales_rank_history: No valid category data found - returning empty DataFrame")
                 return pd.DataFrame()
         
         # Parse the sales rank data
         # Format: [timestamp1, rank1, timestamp2, rank2, ...]
         records = []
+        skipped_negative_one = 0
+        parse_errors = 0
+        
         for i in range(0, len(sales_rank_data), 2):
             if i + 1 < len(sales_rank_data):
                 try:
@@ -136,9 +198,18 @@ class SalesRankAnalyzer:
                             'datetime': dt,
                             'sales_rank': rank
                         })
+                    else:
+                        skipped_negative_one += 1
                 except (ValueError, TypeError) as e:
-                    # Skip invalid data points
+                    parse_errors += 1
                     continue
+        
+        self._debug_print(f"parse_sales_rank_history: Parsed {len(records)} records, skipped {skipped_negative_one} (-1 values), {parse_errors} parse errors")
+        
+        if records:
+            # Show date range of parsed data
+            dates = [r['datetime'] for r in records]
+            self._debug_print(f"parse_sales_rank_history: Date range: {min(dates)} to {max(dates)}")
         
         return pd.DataFrame(records)
     
@@ -153,7 +224,11 @@ class SalesRankAnalyzer:
         Returns:
             dict: Dictionary containing various sales rank statistics
         """
+        self._debug_print(f"calculate_sales_rank_stats: Analyzing last {days} days")
+        self._debug_print(f"calculate_sales_rank_stats: Input DataFrame has {len(df)} rows")
+        
         if df.empty:
+            self._debug_print("calculate_sales_rank_stats: DataFrame is empty - returning zeros")
             return {
                 'average_rank': None,
                 'min_rank': None,
@@ -165,9 +240,16 @@ class SalesRankAnalyzer:
         
         # Filter for last N days
         cutoff_date = datetime.now() - timedelta(days=days)
+        self._debug_print(f"calculate_sales_rank_stats: Cutoff date: {cutoff_date}")
+        self._debug_print(f"calculate_sales_rank_stats: DataFrame date range: {df['datetime'].min()} to {df['datetime'].max()}")
+        
         recent_data = df[df['datetime'] >= cutoff_date].copy()
         
+        self._debug_print(f"calculate_sales_rank_stats: After filtering: {len(recent_data)} rows (from {len(df)} total)")
+        
         if recent_data.empty:
+            self._debug_print("calculate_sales_rank_stats: No data within period - returning zeros")
+            self._debug_print(f"  HINT: Data ends at {df['datetime'].max()}, but cutoff is {cutoff_date}")
             return {
                 'average_rank': None,
                 'min_rank': None,
@@ -187,6 +269,8 @@ class SalesRankAnalyzer:
             'days_analyzed': days
         }
         
+        self._debug_print(f"calculate_sales_rank_stats: Stats calculated successfully")
+        
         return stats
     
     def get_user_input(self, parent_window=None):
@@ -200,21 +284,28 @@ class SalesRankAnalyzer:
         Returns:
             tuple: (asin, days, export_csv) or None if cancelled
         """
-        mouse_x, mouse_y = pyautogui.position()
-        
         # Create the main input window
         root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
         root.title("Sales Rank Analyzer - Input")
-        root.geometry(f'400x300+{mouse_x}+{mouse_y}')
+        
+        # IMPORTANT: Enable resizing so user can expand the window if needed
+        root.resizable(True, True)
+        
+        # Set minimum size to ensure UI elements are visible
+        root.minsize(400, 300)
+        
+        # Center the window on screen with a reasonable default size
+        root.update_idletasks()
+        window_width = 500
+        window_height = 400
+        x = (root.winfo_screenwidth() // 2) - (window_width // 2)
+        y = (root.winfo_screenheight() // 2) - (window_height // 2)
+        root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+        
+        # Show window on top initially
         root.lift()
         root.attributes('-topmost', True)
-        root.resizable(False, False)
-        
-        # Center the window on screen
-        root.update_idletasks()
-        x = (root.winfo_screenwidth() // 2) - (400 // 2)
-        y = (root.winfo_screenheight() // 2) - (300 // 2)
-        root.geometry(f'400x300+{x}+{y}')
+        root.after_idle(lambda: root.attributes('-topmost', False))
         
         # Variables to store input values
         asin_var = tk.StringVar()
@@ -314,7 +405,7 @@ class SalesRankAnalyzer:
         # Return the stored result
         return result_var[0]
     
-    def process_and_display_results(self, asin, days, export_csv, parent_window=None):
+    def process_and_display_results(self, asin, days, export_csv, parent_window=None, verbose=False):
         """
         Process ASIN and display sales rank analysis results in a GUI window.
         
@@ -323,38 +414,81 @@ class SalesRankAnalyzer:
             days (int): Number of days to analyze
             export_csv (bool): Whether to offer CSV export
             parent_window: Optional parent window for modal behavior
+            verbose (bool): If True, enable debug output for this analysis
         """
+        # Temporarily enable verbose mode if requested
+        original_verbose = self.verbose
+        if verbose:
+            self.verbose = True
+        
+        self._debug_print(f"=" * 60)
+        self._debug_print(f"Starting sales rank analysis for ASIN: {asin}")
+        self._debug_print(f"Days to analyze: {days}")
+        self._debug_print(f"=" * 60)
+        
         # Fetch product data
         print(f"Fetching sales rank data for ASIN: {asin}")
         product_data = self.get_product_sales_rank(asin)
         
         if not product_data:
+            self._debug_print("process_and_display_results: API returned no product data")
+            self.verbose = original_verbose  # Restore original verbose setting
             if parent_window:
                 messagebox.showerror("Error", "Failed to fetch product data.", parent=parent_window)
             else:
                 print("Failed to fetch product data. Exiting.")
             return
         
+        self._debug_print(f"process_and_display_results: Product data received, parsing sales rank history...")
+        
         # Parse sales rank history
         sales_rank_df = self.parse_sales_rank_history(product_data)
         
         if sales_rank_df.empty:
+            self._debug_print("process_and_display_results: parse_sales_rank_history returned empty DataFrame")
+            self.verbose = original_verbose  # Restore original verbose setting
             if parent_window:
                 messagebox.showwarning("Warning", "No sales rank history found for this product.", parent=parent_window)
             else:
                 print("No sales rank history found for this product.")
             return
         
+        self._debug_print(f"process_and_display_results: DataFrame has {len(sales_rank_df)} records, calculating stats...")
+        
         # Calculate statistics
         stats = self.calculate_sales_rank_stats(sales_rank_df, days)
         
+        self._debug_print(f"process_and_display_results: Stats calculated - data_points={stats['data_points']}")
+        self._debug_print(f"=" * 60)
+        
+        # Restore original verbose setting
+        self.verbose = original_verbose
+        
         # Display results
-        mouse_x, mouse_y = pyautogui.position()
         result_root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
-        result_root.geometry(f'800x600+{mouse_x}+{mouse_y}')
         result_root.title(f'Sales Rank Analysis - {asin}')
+        
+        # IMPORTANT: Enable resizing so user can expand the window
+        result_root.resizable(True, True)
+        
+        # Set minimum size
+        result_root.minsize(700, 500)
+        
+        # Center the window on screen with a larger default size
+        result_root.update_idletasks()
+        screen_width = result_root.winfo_screenwidth()
+        screen_height = result_root.winfo_screenheight()
+        # Use 70% of screen dimensions
+        window_width = min(int(screen_width * 0.70), 1200)
+        window_height = min(int(screen_height * 0.70), 900)
+        x = (screen_width // 2) - (window_width // 2)
+        y = (screen_height // 2) - (window_height // 2)
+        result_root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+        
+        # Show window on top initially
         result_root.lift()
         result_root.attributes('-topmost', True)
+        result_root.after_idle(lambda: result_root.attributes('-topmost', False))
         
         # Create scrolled text widget
         text = scrolledtext.ScrolledText(result_root, wrap=tk.WORD, width=60, height=25)
@@ -363,6 +497,13 @@ class SalesRankAnalyzer:
         # Format output
         output_lines = [f'Sales Rank Analysis for ASIN: {asin}\n']
         output_lines.append('=' * 50)
+        
+        # Show the selected category
+        if self.selected_category_name:
+            output_lines.append(f'Category: {self.selected_category_name}')
+            if self.selected_category_id:
+                output_lines.append(f'Category ID: {self.selected_category_id}')
+            output_lines.append('')
         
         if stats['data_points'] == 0:
             output_lines.append('No sales rank data available for the specified time period.')
