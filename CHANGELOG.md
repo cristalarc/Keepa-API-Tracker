@@ -1,6 +1,66 @@
 # Changelog
 
-## 2025-01-29
+## 2024-12-24
+- **NEW FEATURE**: Batch Processing Mode for Sales Rank Analyzer
+  - Added dual processing mode support: Single ASIN and Batch Processing
+  - Implemented batch mode with text widget for entering multiple ASINs (comma, space, or newline separated)
+  - Added "Load All Saved ASINs" and "Load from List" quick-load buttons for batch input
+  - Batch mode allows analyzing sales rank for multiple products in one operation
+  - Matches the batch processing capabilities already available in Buybox Analyzer
+- **NEW FEATURE**: ASIN Input Mode Selection for Single Mode
+  - Added ASIN input mode radio buttons (Manual Input vs. Select from List)
+  - Manual mode allows direct ASIN entry with validation
+  - Select mode provides dropdown of saved ASINs for quick selection
+  - Combobox automatically populated with all saved ASINs from ASIN Manager
+  - Dynamic UI switching between manual entry and dropdown selection
+- **NEW FEATURE**: Progress Tracking for Batch Operations
+  - Implemented visual progress window during batch processing
+  - Displays progress bar showing completion percentage
+  - Shows current ASIN being processed (e.g., "Processing ASIN 5/20: B00EXAMPLE")
+  - Real-time status updates as each ASIN is analyzed
+  - Centered progress window for better visibility
+- **NEW FEATURE**: Enhanced Results Display for Batch Mode
+  - Different output formatting for single vs. batch processing
+  - Batch results show ASIN, product title, category, and statistics for each product
+  - Results grouped by ASIN with clear separators for readability
+  - Displays comprehensive summary: total ASINs processed, success count, and error count
+  - Error section at bottom lists all failed ASINs with specific error messages
+  - Window sizing optimized: 95% screen size for batch, 70% for single ASIN
+- **NEW FEATURE**: CSV Export for Batch Results
+  - Enhanced CSV export to handle multiple ASIN results in single file
+  - Export includes ASIN, title, category name, category ID, and all statistics
+  - Summary columns: days_analyzed, data_points, rank_changes, average_rank, min_rank, max_rank
+  - Export confirmation shows count of processed ASINs and any errors
+  - Maintains compatibility with single ASIN CSV export format
+- **UI IMPROVEMENTS**: Dynamic Interface Enhancements
+  - Processing mode selection with radio buttons (Single ASIN / Batch Processing)
+  - Dynamic window resizing: 600x600 for single mode, 700x700 for batch mode
+  - UI elements show/hide based on selected mode for cleaner interface
+  - Batch frame with labeled border and integrated quick-load buttons
+  - Larger input window (700x600) to accommodate new options
+  - Maintained consistent design patterns with Buybox Analyzer interface
+- **CODE QUALITY**: Architectural Improvements
+  - Added `process_single_asin()` helper method for clean separation of concerns
+  - Returns `(result_dict, error)` tuple for consistent error handling
+  - Method now accepts list of ASINs instead of single ASIN for unified interface
+  - Extracted single ASIN processing logic for reuse in both modes
+  - Enhanced error handling with specific error messages per ASIN
+  - Updated `run_sales_rank_analyzer()` in main app to handle new return format
+  - Added imports for ASIN management functions (validate_asin, validate_asin_list, etc.)
+  - Maintained backward compatibility with existing functionality
+- **CODE QUALITY**: Result Structure Enhancement
+  - Created comprehensive result dictionary with all analysis data
+  - Includes ASIN, title, category info, statistics, and raw DataFrame
+  - Enables batch processing without code duplication
+  - Facilitates CSV export with consistent data structure
+  - Improved result aggregation and error tracking
+- **USER EXPERIENCE**: Completion Messages
+  - Different completion messages for single vs. batch mode
+  - Batch completion shows total ASIN count processed
+  - Clear feedback on operation success or failure
+  - Integration with main menu return workflow
+
+## 2025-12-24
 - **BUG FIX**: Fixed Sales Rank Category Selection Logic
   - Replaced scoring-based category selection with categoryTree-based selection
   - Now correctly selects the most specific (deepest) category from the categoryTree hierarchy
@@ -27,7 +87,7 @@
   - Added category name lookup dictionary for efficient name resolution
   - Improved code documentation explaining category selection logic
 
-## 2025-01-28
+## 2025-12-24
 - **NEW FEATURE**: Sales Rank Debugging in Debug Mode
   - Extended Debug Mode to support Sales Rank Analyzer debugging alongside Buybox Analyzer
   - Added `fetch_sales_rank_data()` method to fetch and analyze sales rank data from Keepa API

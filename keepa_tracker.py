@@ -273,6 +273,7 @@ class KeepaTrackerApp:
     def run_sales_rank_analyzer(self):
         """
         Runs the sales rank analyzer tool.
+        Supports both single ASIN and batch processing modes.
         After completion, returns to the main menu.
         """
         try:
@@ -283,19 +284,26 @@ class KeepaTrackerApp:
                 # User cancelled, return to menu
                 return
 
-            asin, days, export_csv = user_input
+            asins, days, export_csv = user_input
 
             # Process and display results
             self.sales_rank_analyzer.process_and_display_results(
-                asin, days, export_csv, parent_window=self.root
+                asins, days, export_csv, parent_window=self.root
             )
 
             # Return to menu after results window is closed
-            messagebox.showinfo(
-                "Complete",
-                "Sales rank analysis complete. Returning to main menu.",
-                parent=self.root
-            )
+            if len(asins) == 1:
+                messagebox.showinfo(
+                    "Complete",
+                    "Sales rank analysis complete. Returning to main menu.",
+                    parent=self.root
+                )
+            else:
+                messagebox.showinfo(
+                    "Complete",
+                    f"Batch sales rank analysis complete ({len(asins)} ASINs). Returning to main menu.",
+                    parent=self.root
+                )
 
         except Exception as e:
             messagebox.showerror(
