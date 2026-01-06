@@ -273,6 +273,7 @@ class KeepaTrackerApp:
     def run_sales_rank_analyzer(self):
         """
         Runs the sales rank analyzer tool.
+        Supports both single ASIN and batch processing modes.
         After completion, returns to the main menu.
         """
         try:
@@ -283,19 +284,26 @@ class KeepaTrackerApp:
                 # User cancelled, return to menu
                 return
 
-            asin, days, export_csv = user_input
+            asins, days, export_csv = user_input
 
             # Process and display results
             self.sales_rank_analyzer.process_and_display_results(
-                asin, days, export_csv, parent_window=self.root
+                asins, days, export_csv, parent_window=self.root
             )
 
             # Return to menu after results window is closed
-            messagebox.showinfo(
-                "Complete",
-                "Sales rank analysis complete. Returning to main menu.",
-                parent=self.root
-            )
+            if len(asins) == 1:
+                messagebox.showinfo(
+                    "Complete",
+                    "Sales rank analysis complete. Returning to main menu.",
+                    parent=self.root
+                )
+            else:
+                messagebox.showinfo(
+                    "Complete",
+                    f"Batch sales rank analysis complete ({len(asins)} ASINs). Returning to main menu.",
+                    parent=self.root
+                )
 
         except Exception as e:
             messagebox.showerror(
@@ -313,14 +321,24 @@ class KeepaTrackerApp:
             # Create ASIN Manager window
             manager_window = tk.Toplevel(self.root)
             manager_window.title("ASIN Manager")
-            manager_window.geometry("900x700")
             manager_window.transient(self.root)
+            
+            # IMPORTANT: Enable resizing so user can expand the window
+            manager_window.resizable(True, True)
+            
+            # Set minimum size
+            manager_window.minsize(800, 600)
 
-            # Center the window
+            # Center the window with a larger default size
             manager_window.update_idletasks()
-            x = (manager_window.winfo_screenwidth() // 2) - (900 // 2)
-            y = (manager_window.winfo_screenheight() // 2) - (700 // 2)
-            manager_window.geometry(f'900x700+{x}+{y}')
+            screen_width = manager_window.winfo_screenwidth()
+            screen_height = manager_window.winfo_screenheight()
+            # Use 75% of screen dimensions
+            window_width = min(int(screen_width * 0.75), 1200)
+            window_height = min(int(screen_height * 0.75), 900)
+            x = (screen_width // 2) - (window_width // 2)
+            y = (screen_height // 2) - (window_height // 2)
+            manager_window.geometry(f'{window_width}x{window_height}+{x}+{y}')
 
             # Load current ASIN lists
             lists_data = load_all_asin_lists()

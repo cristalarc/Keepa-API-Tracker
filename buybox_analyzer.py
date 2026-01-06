@@ -6,7 +6,8 @@ It follows the Single Responsibility Principle by focusing solely on buybox anal
 
 import requests
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
+import pytz
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext, simpledialog
 import pyautogui
@@ -18,6 +19,87 @@ from asin_manager import (
 
 # Amazon's seller ID constant
 AMAZON_SELLER_ID = 'ATVPDKIKX0DER'
+
+# US Eastern timezone for traffic weight calculations
+US_EASTERN = pytz.timezone('US/Eastern')
+
+# Hourly traffic weights based on Amazon.com browsing patterns (US Eastern Time)
+# Values represent estimated percentage of daily traffic for each hour
+HOURLY_TRAFFIC_WEIGHTS = {
+    0: 0.015,   # 12 AM - 1 AM
+    1: 0.010,   # 1 AM - 2 AM
+    2: 0.008,   # 2 AM - 3 AM
+    3: 0.007,   # 3 AM - 4 AM
+    4: 0.010,   # 4 AM - 5 AM
+    5: 0.018,   # 5 AM - 6 AM
+    6: 0.030,   # 6 AM - 7 AM
+    7: 0.050,   # 7 AM - 8 AM
+    8: 0.065,   # 8 AM - 9 AM
+    9: 0.075,   # 9 AM - 10 AM
+    10: 0.080,  # 10 AM - 11 AM
+    11: 0.085,  # 11 AM - 12 PM (peak)
+    12: 0.080,  # 12 PM - 1 PM
+    13: 0.075,  # 1 PM - 2 PM
+    14: 0.070,  # 2 PM - 3 PM
+    15: 0.065,  # 3 PM - 4 PM
+    16: 0.065,  # 4 PM - 5 PM
+    17: 0.070,  # 5 PM - 6 PM
+    18: 0.075,  # 6 PM - 7 PM
+    19: 0.080,  # 7 PM - 8 PM (peak)
+    20: 0.075,  # 8 PM - 9 PM
+    21: 0.070,  # 9 PM - 10 PM
+    22: 0.050,  # 10 PM - 11 PM
+    23: 0.030,  # 11 PM - 12 AM
+}
+
+
+def calculate_weighted_minutes(start_dt, end_dt, traffic_weights=HOURLY_TRAFFIC_WEIGHTS):
+    """
+    Calculate traffic-weighted minutes for a time interval.
+    Converts UTC timestamps to US Eastern time before applying weights.
+
+    Args:
+        start_dt: Start datetime (UTC, timezone-naive from Keepa)
+        end_dt: End datetime (UTC, timezone-naive from Keepa)
+        traffic_weights: Dict mapping hour (0-23) to weight (0-1)
+
+    Returns:
+        float: Weighted minutes value
+    """
+    # Make timestamps timezone-aware (Keepa uses UTC)
+    utc = pytz.UTC
+    if start_dt.tzinfo is None:
+        start_dt = utc.localize(start_dt)
+    if end_dt.tzinfo is None:
+        end_dt = utc.localize(end_dt)
+
+    # Convert to US Eastern for traffic weighting
+    start_et = start_dt.astimezone(US_EASTERN)
+    end_et = end_dt.astimezone(US_EASTERN)
+
+    weighted_total = 0.0
+    current = start_et
+
+    while current < end_et:
+        # Get the end of the current hour
+        next_hour = current.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+
+        # Determine the end of this segment (either end of hour or end of interval)
+        segment_end = min(next_hour, end_et)
+
+        # Calculate minutes in this segment
+        segment_minutes = (segment_end - current).total_seconds() / 60
+
+        # Get the weight for this hour
+        hour_weight = traffic_weights.get(current.hour, 0.05)  # Default to 5% if missing
+
+        # Add weighted minutes
+        weighted_total += segment_minutes * hour_weight
+
+        # Move to next segment
+        current = segment_end
+
+    return weighted_total
 
 
 class BuyboxAnalyzer:
@@ -152,10 +234,13 @@ class BuyboxAnalyzer:
                         'month': month,
                         'amazon_percent_count': None,
                         'amazon_percent_time': None,
+                        'amazon_percent_glance_views': None,
                         'total_count': 0,
                         'amazon_count': 0,
                         'amazon_time_minutes': None,
-                        'total_time_minutes': None
+                        'total_time_minutes': None,
+                        'amazon_weighted_minutes': None,
+                        'total_weighted_minutes': None
                     })
                     continue
                 
@@ -164,27 +249,41 @@ class BuyboxAnalyzer:
                 total_count = len(month_df)
                 percent_count = (amazon_count / total_count) * 100
                 
-                # Time-based calculation
+                # Time-based and Glance-views calculation
                 amazon_time = 0
                 total_time = 0
+                amazon_weighted_time = 0
+                total_weighted_time = 0
+
                 for i in range(len(month_df) - 1):
                     t1 = month_df.loc[i, 'datetime']
                     t2 = month_df.loc[i + 1, 'datetime']
                     delta = (t2 - t1).total_seconds() / 60  # minutes
                     total_time += delta
+
+                    # Calculate traffic-weighted minutes for this interval
+                    weighted_mins = calculate_weighted_minutes(t1, t2)
+                    total_weighted_time += weighted_mins
+
                     if month_df.loc[i, 'seller_id'] == AMAZON_SELLER_ID:
                         amazon_time += delta
-                
+                        amazon_weighted_time += weighted_mins
+
                 percent_time = (amazon_time / total_time) * 100 if total_time > 0 else None
+                percent_glance_views = (amazon_weighted_time / total_weighted_time) * 100 if total_weighted_time > 0 else None
+
                 results.append({
                     'asin': asin,
                     'month': month,
                     'amazon_percent_count': percent_count,
                     'amazon_percent_time': percent_time,
+                    'amazon_percent_glance_views': percent_glance_views,
                     'total_count': total_count,
                     'amazon_count': amazon_count,
                     'amazon_time_minutes': amazon_time,
-                    'total_time_minutes': total_time
+                    'total_time_minutes': total_time,
+                    'amazon_weighted_minutes': amazon_weighted_time,
+                    'total_weighted_minutes': total_weighted_time
                 })
             
             return results, None
@@ -203,21 +302,28 @@ class BuyboxAnalyzer:
         Returns:
             tuple: (asins, year, months, export_preference) or None if cancelled
         """
-        mouse_x, mouse_y = pyautogui.position()
-        
         # Create the main input window
         root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
         root.title("Buybox Analyzer - Input")
-        root.geometry(f'500x500+{mouse_x}+{mouse_y}')
+        
+        # IMPORTANT: Enable resizing so user can expand the window if needed
+        root.resizable(True, True)
+        
+        # Set minimum size to ensure UI elements are visible
+        root.minsize(700, 650)
+        
+        # Center the window on screen with a larger default size
+        root.update_idletasks()
+        window_width = 750
+        window_height = 700
+        x = (root.winfo_screenwidth() // 2) - (window_width // 2)
+        y = (root.winfo_screenheight() // 2) - (window_height // 2)
+        root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+        
+        # Show window on top initially
         root.lift()
         root.attributes('-topmost', True)
-        root.resizable(False, False)
-        
-        # Center the window on screen
-        root.update_idletasks()
-        x = (root.winfo_screenwidth() // 2) - (600 // 2)
-        y = (root.winfo_screenheight() // 2) - (600 // 2)
-        root.geometry(f'600x600+{x}+{y}')
+        root.after_idle(lambda: root.attributes('-topmost', False))
         
         # Variables to store input values
         asin_var = tk.StringVar()
@@ -235,9 +341,20 @@ class BuyboxAnalyzer:
             """Open ASIN management window"""
             manager_window = tk.Toplevel(root)
             manager_window.title("ASIN Manager")
-            manager_window.geometry("800x600")
             manager_window.transient(root)
             manager_window.grab_set()
+            
+            # Enable resizing and set a reasonable default size
+            manager_window.resizable(True, True)
+            manager_window.minsize(700, 500)
+            
+            # Center the window with a larger default size
+            manager_window.update_idletasks()
+            window_width = 900
+            window_height = 700
+            x = (manager_window.winfo_screenwidth() // 2) - (window_width // 2)
+            y = (manager_window.winfo_screenheight() // 2) - (window_height // 2)
+            manager_window.geometry(f'{window_width}x{window_height}+{x}+{y}')
             
             # Load current ASIN lists
             lists_data = load_all_asin_lists()
@@ -693,15 +810,20 @@ class BuyboxAnalyzer:
             # Create a simple dialog to select list
             list_window = tk.Toplevel(root)
             list_window.title("Select List")
-            list_window.geometry("300x200")
             list_window.transient(root)
             list_window.grab_set()
             
-            # Center the list selection window
+            # Enable resizing and set minimum size
+            list_window.resizable(True, True)
+            list_window.minsize(300, 180)
+            
+            # Center the list selection window with a reasonable default size
             list_window.update_idletasks()
-            list_x = (list_window.winfo_screenwidth() // 2) - (300 // 2)
-            list_y = (list_window.winfo_screenheight() // 2) - (200 // 2)
-            list_window.geometry(f'300x200+{list_x}+{list_y}')
+            window_width = 400
+            window_height = 250
+            list_x = (list_window.winfo_screenwidth() // 2) - (window_width // 2)
+            list_y = (list_window.winfo_screenheight() // 2) - (window_height // 2)
+            list_window.geometry(f'{window_width}x{window_height}+{list_x}+{list_y}')
             
             ttk.Label(list_window, text="Select a list to load:").pack(pady=10)
             
@@ -846,12 +968,37 @@ class BuyboxAnalyzer:
                 print("All ASINs processed successfully!")
         
         # Show results in a dedicated tkinter window
-        mouse_x, mouse_y = pyautogui.position()
         result_root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
-        result_root.geometry(f'1200x800+{mouse_x}+{mouse_y}')
         result_root.title('Buybox Analysis Results')
+
+        # CRITICAL: Set resizable BEFORE any geometry settings
+        result_root.resizable(True, True)
+
+        # Remove transient to allow independent window controls
+        if parent_window:
+            result_root.transient()  # Clear transient relationship
+
+        # Make window very large - almost full screen
+        result_root.update_idletasks()
+        screen_width = result_root.winfo_screenwidth()
+        screen_height = result_root.winfo_screenheight()
+        # Use 95% of screen dimensions with much larger minimums
+        window_width = int(screen_width * 0.95)
+        window_height = int(screen_height * 0.90)
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        result_root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+
+        # Set minimum size AFTER geometry
+        result_root.minsize(1200, 800)
+
+        # Show window on top initially, then allow normal behavior
         result_root.lift()
         result_root.attributes('-topmost', True)
+        result_root.after_idle(lambda: result_root.attributes('-topmost', False))
+
+        # Force update to apply all settings
+        result_root.update()
         
         text = scrolledtext.ScrolledText(result_root, wrap=tk.WORD, width=80, height=30)
         text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
@@ -869,6 +1016,7 @@ class BuyboxAnalyzer:
                     output_lines.append(f'Amazon match count: {r["amazon_count"]} / {r["total_count"]}')
                     output_lines.append(f'Amazon held the buybox (by count): {r["amazon_percent_count"]:.2f}%')
                     output_lines.append(f'Amazon held the buybox (by time): {r["amazon_percent_time"]:.2f}%')
+                    output_lines.append(f'Amazon held the buybox (by glance views): {r["amazon_percent_glance_views"]:.2f}%')
                     output_lines.append(f'Amazon time held (min): {r["amazon_time_minutes"]:.2f} / {r["total_time_minutes"]:.2f}')
             output_lines.append('-' * 40)
         else:
@@ -897,6 +1045,7 @@ class BuyboxAnalyzer:
                     else:
                         output_lines.append(f'  Amazon held the buybox (by count): {r["amazon_percent_count"]:.2f}%')
                         output_lines.append(f'  Amazon held the buybox (by time): {r["amazon_percent_time"]:.2f}%')
+                        output_lines.append(f'  Amazon held the buybox (by glance views): {r["amazon_percent_glance_views"]:.2f}%')
                     output_lines.append('')
             
             if errors:
@@ -947,21 +1096,28 @@ class BuyboxAnalyzer:
         Returns:
             tuple: (asins, export_preference) or None if cancelled
         """
-        mouse_x, mouse_y = pyautogui.position()
-
         # Create the main input window
         root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
         root.title("Current Buybox Owners - Input")
-        root.geometry(f'500x400+{mouse_x}+{mouse_y}')
+        
+        # IMPORTANT: Enable resizing so user can expand the window if needed
+        root.resizable(True, True)
+        
+        # Set minimum size to ensure UI elements are visible
+        root.minsize(700, 650)
+        
+        # Center the window on screen with a larger default size
+        root.update_idletasks()
+        window_width = 750
+        window_height = 700
+        x = (root.winfo_screenwidth() // 2) - (window_width // 2)
+        y = (root.winfo_screenheight() // 2) - (window_height // 2)
+        root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+        
+        # Show window on top initially
         root.lift()
         root.attributes('-topmost', True)
-        root.resizable(False, False)
-
-        # Center the window on screen
-        root.update_idletasks()
-        x = (root.winfo_screenwidth() // 2) - (600 // 2)
-        y = (root.winfo_screenheight() // 2) - (500 // 2)
-        root.geometry(f'600x500+{x}+{y}')
+        root.after_idle(lambda: root.attributes('-topmost', False))
 
         # Variables to store input values
         asin_var = tk.StringVar()
@@ -977,9 +1133,20 @@ class BuyboxAnalyzer:
             """Open ASIN management window"""
             manager_window = tk.Toplevel(root)
             manager_window.title("ASIN Manager")
-            manager_window.geometry("800x600")
             manager_window.transient(root)
             manager_window.grab_set()
+            
+            # Enable resizing and set a reasonable default size
+            manager_window.resizable(True, True)
+            manager_window.minsize(700, 500)
+            
+            # Center the window with a larger default size
+            manager_window.update_idletasks()
+            window_width = 900
+            window_height = 700
+            x = (manager_window.winfo_screenwidth() // 2) - (window_width // 2)
+            y = (manager_window.winfo_screenheight() // 2) - (window_height // 2)
+            manager_window.geometry(f'{window_width}x{window_height}+{x}+{y}')
 
             lists_data = load_all_asin_lists()
 
@@ -1217,7 +1384,8 @@ class BuyboxAnalyzer:
 
         def update_batch_mode():
             if batch_mode_var.get():
-                batch_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(5, 10), padx=(0, 0))
+                # Use all sticky directions (N, S, E, W) so it expands when window is resized
+                batch_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(5, 10), padx=(0, 0))
                 asin_label.grid_remove()
                 asin_input_frame.grid_remove()
                 asin_manager_button.grid_remove()
@@ -1272,10 +1440,13 @@ class BuyboxAnalyzer:
         main_frame = ttk.Frame(root, padding="20")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
+        # Configure grid weights for proper resizing
         root.columnconfigure(0, weight=1)
         root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
         main_frame.columnconfigure(2, weight=1)
+        # Allow row 3 (where batch_frame is placed) to expand vertically when resizing
+        main_frame.rowconfigure(3, weight=1)
 
         # Title
         title_label = ttk.Label(main_frame, text="Current Buybox Owners", font=("Arial", 16, "bold"))
@@ -1322,8 +1493,18 @@ class BuyboxAnalyzer:
 
         ttk.Label(batch_frame, text="Enter ASINs (comma, space, or newline separated):").pack(anchor=tk.W)
 
-        batch_text_widget = tk.Text(batch_frame, height=6, width=50)
-        batch_text_widget.pack(fill=tk.X, pady=(5, 10))
+        # Create a frame for the text widget and scrollbar
+        batch_text_frame = ttk.Frame(batch_frame)
+        batch_text_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 10))
+        
+        # Create scrollbar for the text widget
+        batch_scrollbar = ttk.Scrollbar(batch_text_frame, orient=tk.VERTICAL)
+        batch_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Larger text area (height=12 instead of 6) with scrollbar
+        batch_text_widget = tk.Text(batch_text_frame, height=12, width=50, yscrollcommand=batch_scrollbar.set)
+        batch_text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        batch_scrollbar.config(command=batch_text_widget.yview)
 
         # Quick load buttons
         batch_buttons_frame = ttk.Frame(batch_frame)
@@ -1345,14 +1526,20 @@ class BuyboxAnalyzer:
 
             list_window = tk.Toplevel(root)
             list_window.title("Select List")
-            list_window.geometry("300x200")
             list_window.transient(root)
             list_window.grab_set()
+            
+            # Enable resizing and set minimum size
+            list_window.resizable(True, True)
+            list_window.minsize(300, 180)
 
+            # Center the window with a reasonable default size
             list_window.update_idletasks()
-            list_x = (list_window.winfo_screenwidth() // 2) - (300 // 2)
-            list_y = (list_window.winfo_screenheight() // 2) - (200 // 2)
-            list_window.geometry(f'300x200+{list_x}+{list_y}')
+            window_width = 400
+            window_height = 250
+            list_x = (list_window.winfo_screenwidth() // 2) - (window_width // 2)
+            list_y = (list_window.winfo_screenheight() // 2) - (window_height // 2)
+            list_window.geometry(f'{window_width}x{window_height}+{list_x}+{list_y}')
 
             ttk.Label(list_window, text="Select a list to load:").pack(pady=10)
 
@@ -1482,12 +1669,37 @@ class BuyboxAnalyzer:
                 print("All ASINs processed successfully!")
 
         # Show results in a dedicated tkinter window
-        mouse_x, mouse_y = pyautogui.position()
         result_root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
-        result_root.geometry(f'1200x800+{mouse_x}+{mouse_y}')
         result_root.title('Current Buybox Owners')
+
+        # CRITICAL: Set resizable BEFORE any geometry settings
+        result_root.resizable(True, True)
+
+        # Remove transient to allow independent window controls
+        if parent_window:
+            result_root.transient()  # Clear transient relationship
+
+        # Make window very large - almost full screen
+        result_root.update_idletasks()
+        screen_width = result_root.winfo_screenwidth()
+        screen_height = result_root.winfo_screenheight()
+        # Use 95% of screen dimensions with much larger minimums
+        window_width = int(screen_width * 0.95)
+        window_height = int(screen_height * 0.90)
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        result_root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+
+        # Set minimum size AFTER geometry
+        result_root.minsize(1200, 800)
+
+        # Show window on top initially, then allow normal behavior
         result_root.lift()
         result_root.attributes('-topmost', True)
+        result_root.after_idle(lambda: result_root.attributes('-topmost', False))
+
+        # Force update to apply all settings
+        result_root.update()
 
         text = scrolledtext.ScrolledText(result_root, wrap=tk.WORD, width=80, height=30)
         text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)

@@ -1,0 +1,25 @@
+Hour (Local),% of Total Daily Views (Estimate),Commentary
+12 AM – 1 AM,~1.5%,Overnight low traffic
+1 AM – 2 AM,~1.0%,Lowest traffic block
+2 AM – 3 AM,~0.8%,Early morning browsing minimal
+3 AM – 4 AM,~0.7%,Very low usage
+4 AM – 5 AM,~1.0%,Slight pickup
+5 AM – 6 AM,~1.8%,Early risers start browsing
+6 AM – 7 AM,~3.0%,Morning begins
+7 AM – 8 AM,~5.0%,Commute/early day browsing
+8 AM – 9 AM,~6.5%,Growing activity
+9 AM – 10 AM,~7.5%,Morning peak building
+10 AM – 11 AM,~8.0%,Strong session volume
+11 AM – 12 PM,~8.5%,Midday traffic stays high
+12 PM – 1 PM,~8.0%,Lunch browsing plateau
+1 PM – 2 PM,~7.5%,Midday continues
+2 PM – 3 PM,~7.0%,Afternoon steady
+3 PM – 4 PM,~6.5%,Afternoon decline
+4 PM – 5 PM,~6.5%,Pre-evening
+5 PM – 6 PM,~7.0%,Start of evening peak
+6 PM – 7 PM,~7.5%,Evening ramp
+7 PM – 8 PM,~8.0%,Typical highest hour window
+8 PM – 9 PM,~7.5%,Peak continues
+9 PM – 10 PM,~7.0%,Evening strong
+10 PM – 11 PM,~5.0%,Declining
+11 PM – 12 AM,~3.0%,Transition to overnight
