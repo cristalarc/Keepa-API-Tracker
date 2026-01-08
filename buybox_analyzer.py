@@ -225,49 +225,100 @@ class BuyboxAnalyzer:
             df['month'] = df['datetime'].dt.month
             
             # Filter for selected month/year
+            # Filter for selected month/year
             results = []
             for month in months:
-                month_df = df[(df['year'] == year) & (df['month'] == month)].sort_values('datetime').reset_index(drop=True)
-                if month_df.empty or len(month_df) < 2:
-                    results.append({
-                        'asin': asin,
-                        'month': month,
-                        'amazon_percent_count': None,
-                        'amazon_percent_time': None,
-                        'amazon_percent_glance_views': None,
-                        'total_count': 0,
-                        'amazon_count': 0,
-                        'amazon_time_minutes': None,
-                        'total_time_minutes': None,
-                        'amazon_weighted_minutes': None,
-                        'total_weighted_minutes': None
-                    })
-                    continue
+                # Define start and end of the month
+                start_of_month = datetime(year, month, 1)
+                if month == 12:
+                    end_of_month = datetime(year + 1, 1, 1)
+                else:
+                    end_of_month = datetime(year, month + 1, 1)
                 
-                # Count-based calculation
-                amazon_count = (month_df['seller_id'] == AMAZON_SELLER_ID).sum()
-                total_count = len(month_df)
-                percent_count = (amazon_count / total_count) * 100
+                # Get records within the month
+                month_df = df[(df['datetime'] >= start_of_month) & (df['datetime'] < end_of_month)].sort_values('datetime').reset_index(drop=True)
                 
-                # Time-based and Glance-views calculation
+                # Initialize counters
                 amazon_time = 0
                 total_time = 0
                 amazon_weighted_time = 0
                 total_weighted_time = 0
+                
+                # --- Handle period BEFORE the first record in the month ---
+                # Find the last record before the start of the month to determine initial owner
+                prev_records = df[df['datetime'] < start_of_month]
+                
+                initial_owner_id = None
+                if not prev_records.empty:
+                    initial_owner_id = prev_records.iloc[-1]['seller_id']
+                elif not month_df.empty:
+                    # If no previous history, assume the first record's owner was active from start of month
+                    # (This is a fallback assumption, but better than losing the time)
+                    initial_owner_id = month_df.iloc[0]['seller_id']
+                
+                # Determine the end of the initial period
+                if not month_df.empty:
+                    first_record_time = month_df.iloc[0]['datetime']
+                else:
+                    # If no records in month, the initial owner held it for the whole month
+                    first_record_time = end_of_month
+                
+                # Calculate duration for the initial period
+                initial_duration = (first_record_time - start_of_month).total_seconds() / 60
+                initial_weighted = calculate_weighted_minutes(start_of_month, first_record_time)
+                
+                total_time += initial_duration
+                total_weighted_time += initial_weighted
+                
+                if initial_owner_id == AMAZON_SELLER_ID:
+                    amazon_time += initial_duration
+                    amazon_weighted_time += initial_weighted
 
-                for i in range(len(month_df) - 1):
-                    t1 = month_df.loc[i, 'datetime']
-                    t2 = month_df.loc[i + 1, 'datetime']
-                    delta = (t2 - t1).total_seconds() / 60  # minutes
-                    total_time += delta
+                # --- Handle records WITHIN the month ---
+                if not month_df.empty:
+                    # Count-based calculation (remains based on records appearing in the month)
+                    amazon_count = (month_df['seller_id'] == AMAZON_SELLER_ID).sum()
+                    total_count = len(month_df)
+                    percent_count = (amazon_count / total_count) * 100
+                    
+                    # Time-based calculation for intervals between records
+                    for i in range(len(month_df) - 1):
+                        t1 = month_df.loc[i, 'datetime']
+                        t2 = month_df.loc[i + 1, 'datetime']
+                        delta = (t2 - t1).total_seconds() / 60  # minutes
+                        total_time += delta
 
-                    # Calculate traffic-weighted minutes for this interval
-                    weighted_mins = calculate_weighted_minutes(t1, t2)
-                    total_weighted_time += weighted_mins
+                        # Calculate traffic-weighted minutes for this interval
+                        weighted_mins = calculate_weighted_minutes(t1, t2)
+                        total_weighted_time += weighted_mins
 
-                    if month_df.loc[i, 'seller_id'] == AMAZON_SELLER_ID:
-                        amazon_time += delta
-                        amazon_weighted_time += weighted_mins
+                        if month_df.loc[i, 'seller_id'] == AMAZON_SELLER_ID:
+                            amazon_time += delta
+                            amazon_weighted_time += weighted_mins
+                    
+                    # --- Handle period AFTER the last record in the month ---
+                    last_record_time = month_df.iloc[-1]['datetime']
+                    last_owner_id = month_df.iloc[-1]['seller_id']
+                    
+                    final_duration = (end_of_month - last_record_time).total_seconds() / 60
+                    final_weighted = calculate_weighted_minutes(last_record_time, end_of_month)
+                    
+                    total_time += final_duration
+                    total_weighted_time += final_weighted
+                    
+                    if last_owner_id == AMAZON_SELLER_ID:
+                        amazon_time += final_duration
+                        amazon_weighted_time += final_weighted
+                else:
+                    # No records in month
+                    total_count = 0
+                    amazon_count = 0
+                    percent_count = None
+                    if initial_owner_id == AMAZON_SELLER_ID:
+                        amazon_count = 1 # technically 1 "state"
+                        percent_count = 100.0
+                    elif initial_owner_id is not None:
+                        percent_count = 0.0
 
                 percent_time = (amazon_time / total_time) * 100 if total_time > 0 else None
                 percent_glance_views = (amazon_weighted_time / total_weighted_time) * 100 if total_weighted_time > 0 else None

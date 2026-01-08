@@ -1,11 +1,6 @@
-
 - A way to easy share and load ASIN lists
-- Glance views adjusted BB
-
--- Processing ASINs window opens in main screen instead of active screen
 
 
 Bugs:
-Review B07SVPB4XX for month 2025-9. Why is it 47% when it should be closer to 90%
-Review B0BC9HSLQN for month 2025-9. Why is it 17.08% when it should be at least 60%
-Could it be Amazon's token?
+
+

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-01-08
+- **BUG FIX**: Fixed Buybox Ownership Calculation Logic
+  - Corrected logic to account for periods of ownership before the first recorded change and after the last recorded change in a month.
+  - Implemented "initial owner" lookup by checking the last record before the start of the month.
+  - Added duration calculation from the start of the month to the first record.
+  - Added duration calculation from the last record in the month to the end of the month.
+  - Fixed significant underreporting of ownership percentages (e.g., test case ASIN B00BGIVI1K corrected from 16% to 95%).
+  - Ensured the fix applies to both time-based and traffic-weighted (Glance Views) calculations.
+  - Improved handling of months with no recorded changes by persisting the previous month's owner.
+- **MAINTENANCE**: Updated `.gitignore`
+  - Added `debug_files` directory to gitignore to prevent raw API data from being committed.
+
+
 ## 2024-12-24
 - **NEW FEATURE**: Batch Processing Mode for Sales Rank Analyzer
   - Added dual processing mode support: Single ASIN and Batch Processing
