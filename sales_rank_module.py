@@ -16,7 +16,8 @@ from asin_manager import (
     load_all_asin_lists,
     validate_asin,
     validate_asin_list,
-    add_asins_to_saved_list
+    add_asins_to_saved_list,
+    update_asin_product_types
 )
 
 
@@ -725,6 +726,18 @@ class SalesRankAnalyzer:
 
         # Restore original verbose setting
         self.verbose = original_verbose
+
+        # Persist detected product types for any ASINs already stored in lists.
+        detected_product_types = {
+            result['asin']: result['category_name']
+            for result in all_results
+            if result.get('category_name')
+        }
+        if detected_product_types:
+            updated_count = update_asin_product_types(detected_product_types)
+            self._debug_print(
+                f"Updated stored product types for {updated_count} ASIN entries."
+            )
 
         # Check if we have any results to display
         if not all_results:
