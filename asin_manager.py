@@ -318,9 +318,10 @@ def add_asins_to_saved_list(new_asins, list_name="Default List", product_type=No
     if list_name not in lists_data:
         lists_data[list_name] = {'asins': [], 'description': '', 'product_types': {}}
     
-    # Get current ASINs from the specific list
-    current_asins = lists_data[list_name]['asins']
-    product_types = lists_data[list_name].get('product_types', {})
+    # Work with copies so failed saves do not leak unsaved state into fallback counts.
+    current_asins = list(lists_data[list_name].get('asins', []))
+    original_asin_count = len(current_asins)
+    product_types = dict(lists_data[list_name].get('product_types', {}))
 
     # Build a per-ASIN product type map from the provided value.
     provided_type_by_asin = {}
@@ -354,7 +355,7 @@ def add_asins_to_saved_list(new_asins, list_name="Default List", product_type=No
     # Save updated lists
     if save_asin_lists(lists_data):
         return len(current_asins), added_count
-    return len(current_asins), 0
+    return original_asin_count, 0
 
 
 def update_asin_product_types(product_type_by_asin, list_name=None):
