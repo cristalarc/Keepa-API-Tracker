@@ -13,6 +13,7 @@ import json
 from buybox_analyzer import BuyboxAnalyzer
 from sales_rank_module import SalesRankAnalyzer
 from debug_mode import DebugViewer
+from competitor_price_tracker import CompetitorPriceTracker
 from asin_manager import (
     load_all_asin_lists, save_asin_lists, validate_asin_list,
     add_asins_to_saved_list, load_saved_asins
@@ -42,6 +43,7 @@ class KeepaTrackerApp:
         self.buybox_analyzer = BuyboxAnalyzer(KEEPA_API_KEY)
         self.sales_rank_analyzer = SalesRankAnalyzer(KEEPA_API_KEY)
         self.debug_viewer = DebugViewer(KEEPA_API_KEY)
+        self.competitor_price_tracker = CompetitorPriceTracker(KEEPA_API_KEY)
     
     def create_main_menu(self):
         """
@@ -144,6 +146,24 @@ class KeepaTrackerApp:
             foreground="gray"
         )
         sales_rank_desc.pack(pady=(0, 10))
+
+        # Competitor Price Tracker Button
+        competitor_price_btn = ttk.Button(
+            button_frame,
+            text="Competitor Price Tracker",
+            command=self.run_competitor_price_tracker,
+            width=25
+        )
+        competitor_price_btn.pack(pady=10)
+
+        # Add tooltip/description for competitor price tracker
+        competitor_price_desc = ttk.Label(
+            button_frame,
+            text="Track competitor ASIN prices with history and drop highlights",
+            font=("Arial", 9),
+            foreground="gray"
+        )
+        competitor_price_desc.pack(pady=(0, 10))
 
         # ASIN Manager Button
         asin_manager_btn = ttk.Button(
@@ -309,6 +329,20 @@ class KeepaTrackerApp:
             messagebox.showerror(
                 "Error",
                 f"An error occurred during sales rank analysis:\n{str(e)}",
+                parent=self.root
+            )
+
+    def run_competitor_price_tracker(self):
+        """
+        Opens the competitor ASIN price tracker.
+        Allows click-to-run tracking with persistent history and charts.
+        """
+        try:
+            self.competitor_price_tracker.open_tracker_window(parent_window=self.root)
+        except Exception as e:
+            messagebox.showerror(
+                "Error",
+                f"An error occurred in Competitor Price Tracker:\n{str(e)}",
                 parent=self.root
             )
     
