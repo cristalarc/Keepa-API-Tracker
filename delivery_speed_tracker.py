@@ -9,12 +9,13 @@ import time
 from datetime import datetime, timedelta
 from html import unescape
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
 
 import pandas as pd
 import requests
 
 from asin_manager import load_all_asin_lists, load_saved_asins, validate_asin_list
+from zip_list_manager import load_all_zip_lists, parse_zip_list, save_zip_list
 
 
 class AmazonDeliveryClient:
@@ -443,24 +444,8 @@ class DeliverySpeedTracker:
         timeout_var = tk.StringVar(value="30")
         proxy_var = tk.StringVar()
         export_var = tk.BooleanVar(value=True)
-
-        def parse_zip_list(raw_text):
-            candidates = re.split(r"[,\n\s]+", raw_text.strip())
-            valid = []
-            invalid = []
-            seen = set()
-            for token in candidates:
-                token = token.strip()
-                if not token:
-                    continue
-                if re.match(r"^\d{5}(?:-\d{4})?$", token):
-                    normalized = token[:5]
-                    if normalized not in seen:
-                        seen.add(normalized)
-                        valid.append(normalized)
-                else:
-                    invalid.append(token)
-            return valid, invalid
+        zip_lists_data = load_all_zip_lists()
+        saved_zip_list_var = tk.StringVar(value=sorted(zip_lists_data.keys())[0] if zip_lists_data else "")
 
         def load_all_saved_asins():
             asins = load_saved_asins()
@@ -504,6 +489,108 @@ class DeliverySpeedTracker:
             ttk.Button(pick_window, text="Load", command=apply_list, style="Accent.TButton").pack(pady=20)
             pick_window.wait_window()
 
+        def refresh_saved_zip_lists():
+            """Refresh saved ZIP list dropdown values."""
+            nonlocal zip_lists_data
+            zip_lists_data = load_all_zip_lists()
+            list_names = sorted(zip_lists_data.keys())
+            saved_zip_list_combo["values"] = list_names
+            if list_names and saved_zip_list_var.get() not in list_names:
+                saved_zip_list_var.set(list_names[0])
+            if not list_names:
+                saved_zip_list_var.set("")
+
+        def load_selected_zip_list(show_message=True):
+            """Load the selected saved ZIP list into the ZIP input box."""
+            selected_list = saved_zip_list_var.get().strip()
+            if not selected_list:
+                if show_message:
+                    messagebox.showwarning("No ZIP List", "Please select a saved ZIP list first.", parent=root)
+                return False
+
+            current_zip_lists = load_all_zip_lists()
+            zips = current_zip_lists.get(selected_list, {}).get("zips", [])
+            if not zips:
+                if show_message:
+                    messagebox.showwarning(
+                        "Empty ZIP List",
+                        f"ZIP list '{selected_list}' has no ZIP codes.",
+                        parent=root,
+                    )
+                return False
+
+            zip_text.delete("1.0", tk.END)
+            zip_text.insert("1.0", "\n".join(zips))
+            if show_message:
+                messagebox.showinfo(
+                    "ZIP List Loaded",
+                    f"Loaded {len(zips)} ZIP code(s) from '{selected_list}'.",
+                    parent=root,
+                )
+            return True
+
+        def save_current_zip_list():
+            """Save ZIP codes currently in the input box as a named list."""
+            zip_raw = zip_text.get("1.0", tk.END).strip()
+            valid_zips, invalid_zips = parse_zip_list(zip_raw)
+            if invalid_zips:
+                preview = ", ".join(invalid_zips[:6])
+                if len(invalid_zips) > 6:
+                    preview += f" ... and {len(invalid_zips) - 6} more"
+                messagebox.showerror(
+                    "Validation Error",
+                    f"Invalid ZIP code(s): {preview}\nUse 5-digit ZIP format (example: 10001).",
+                    parent=root,
+                )
+                return
+
+            if not valid_zips:
+                messagebox.showerror(
+                    "Validation Error",
+                    "Please enter at least one valid ZIP code before saving.",
+                    parent=root,
+                )
+                return
+
+            suggested_name = saved_zip_list_var.get().strip()
+            list_name = simpledialog.askstring(
+                "Save ZIP List",
+                "Enter a name for this ZIP list:",
+                initialvalue=suggested_name,
+                parent=root,
+            )
+            if not list_name or not list_name.strip():
+                return
+            list_name = list_name.strip()
+
+            current_zip_lists = load_all_zip_lists()
+            if list_name in current_zip_lists:
+                overwrite = messagebox.askyesno(
+                    "Overwrite ZIP List",
+                    f"A ZIP list named '{list_name}' already exists.\nOverwrite it?",
+                    parent=root,
+                )
+                if not overwrite:
+                    return
+
+            saved, error = save_zip_list(list_name, valid_zips)
+            if not saved:
+                messagebox.showerror("Save Failed", error or "Unable to save ZIP list.", parent=root)
+                return
+
+            refresh_saved_zip_lists()
+            saved_zip_list_var.set(list_name)
+            messagebox.showinfo(
+                "ZIP List Saved",
+                f"Saved {len(valid_zips)} ZIP code(s) to '{list_name}'.",
+                parent=root,
+            )
+
+        def submit_selected_zip_list():
+            """Convenience action: load selected ZIP list and submit."""
+            if load_selected_zip_list(show_message=False):
+                submit()
+
         def submit():
             asin_raw = asin_text.get("1.0", tk.END).strip()
             valid_asins, asin_error = validate_asin_list(asin_raw)
@@ -515,7 +602,12 @@ class DeliverySpeedTracker:
                 return
 
             zip_raw = zip_text.get("1.0", tk.END).strip()
-            valid_zips, invalid_zips = parse_zip_list(zip_raw)
+            if not zip_raw and saved_zip_list_var.get().strip():
+                selected_zip_list = saved_zip_list_var.get().strip()
+                valid_zips = load_all_zip_lists().get(selected_zip_list, {}).get("zips", [])
+                invalid_zips = []
+            else:
+                valid_zips, invalid_zips = parse_zip_list(zip_raw)
             if invalid_zips:
                 preview = ", ".join(invalid_zips[:6])
                 if len(invalid_zips) > 6:
@@ -620,11 +712,28 @@ class DeliverySpeedTracker:
         zip_frame = ttk.LabelFrame(main_frame, text="ZIP Codes", padding="10")
         zip_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
+        zip_controls = ttk.Frame(zip_frame)
+        zip_controls.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(zip_controls, text="Saved ZIP List:").pack(side=tk.LEFT)
+        saved_zip_list_combo = ttk.Combobox(
+            zip_controls,
+            textvariable=saved_zip_list_var,
+            values=sorted(zip_lists_data.keys()),
+            state="readonly",
+            width=28,
+        )
+        saved_zip_list_combo.pack(side=tk.LEFT, padx=(8, 8))
+        ttk.Button(zip_controls, text="Load", command=load_selected_zip_list).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(zip_controls, text="Save Current", command=save_current_zip_list).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(zip_controls, text="Refresh", command=refresh_saved_zip_lists).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(zip_controls, text="Submit Saved List", command=submit_selected_zip_list).pack(side=tk.LEFT)
+
         zip_help = ttk.Label(zip_frame, text="Enter 5-digit ZIPs separated by comma, space, or newline.")
         zip_help.pack(anchor=tk.W, pady=(0, 5))
         zip_text = tk.Text(zip_frame, height=6)
         zip_text.pack(fill=tk.BOTH, expand=True)
         zip_text.insert("1.0", zips_var.get())
+        refresh_saved_zip_lists()
 
         settings_frame = ttk.LabelFrame(main_frame, text="Request Safety Settings", padding="10")
         settings_frame.pack(fill=tk.X, pady=(0, 12))
