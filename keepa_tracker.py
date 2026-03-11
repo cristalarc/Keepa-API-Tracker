@@ -14,6 +14,7 @@ from buybox_analyzer import BuyboxAnalyzer
 from sales_rank_module import SalesRankAnalyzer
 from debug_mode import DebugViewer
 from competitor_price_tracker import CompetitorPriceTracker
+from delivery_speed_tracker import DeliverySpeedTracker
 from asin_manager import (
     load_all_asin_lists, save_asin_lists, validate_asin_list,
     add_asins_to_saved_list, load_saved_asins
@@ -44,6 +45,7 @@ class KeepaTrackerApp:
         self.sales_rank_analyzer = SalesRankAnalyzer(KEEPA_API_KEY)
         self.debug_viewer = DebugViewer(KEEPA_API_KEY)
         self.competitor_price_tracker = CompetitorPriceTracker(KEEPA_API_KEY)
+        self.delivery_speed_tracker = DeliverySpeedTracker()
     
     def create_main_menu(self):
         """
@@ -164,6 +166,24 @@ class KeepaTrackerApp:
             foreground="gray"
         )
         competitor_price_desc.pack(pady=(0, 10))
+
+        # Delivery Speed by ZIP Button
+        delivery_speed_btn = ttk.Button(
+            button_frame,
+            text="Delivery Speed by ZIP",
+            command=self.run_delivery_speed_tracker,
+            width=25
+        )
+        delivery_speed_btn.pack(pady=10)
+
+        # Add tooltip/description for delivery speed tracker
+        delivery_speed_desc = ttk.Label(
+            button_frame,
+            text="Estimate buybox delivery days for ASINs across ZIP codes",
+            font=("Arial", 9),
+            foreground="gray"
+        )
+        delivery_speed_desc.pack(pady=(0, 10))
 
         # ASIN Manager Button
         asin_manager_btn = ttk.Button(
@@ -343,6 +363,34 @@ class KeepaTrackerApp:
             messagebox.showerror(
                 "Error",
                 f"An error occurred in Competitor Price Tracker:\n{str(e)}",
+                parent=self.root
+            )
+
+    def run_delivery_speed_tracker(self):
+        """
+        Runs delivery speed checks for ASIN + ZIP combinations.
+        After completion, returns to the main menu.
+        """
+        try:
+            user_input = self.delivery_speed_tracker.get_user_input(parent_window=self.root)
+
+            if user_input is None:
+                return
+
+            self.delivery_speed_tracker.process_and_display_results(
+                user_input,
+                parent_window=self.root
+            )
+
+            messagebox.showinfo(
+                "Complete",
+                "Delivery speed check complete. Returning to main menu.",
+                parent=self.root
+            )
+        except Exception as e:
+            messagebox.showerror(
+                "Error",
+                f"An error occurred during delivery speed checks:\n{str(e)}",
                 parent=self.root
             )
     
