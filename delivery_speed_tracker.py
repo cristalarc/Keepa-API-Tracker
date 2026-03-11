@@ -1,0 +1,865 @@
+"""
+Delivery Speed Tracker Module
+Fetches Amazon buybox delivery messaging for ASIN + ZIP combinations.
+"""
+
+import random
+import re
+import time
+from datetime import datetime, timedelta
+from html import unescape
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext, ttk
+
+import pandas as pd
+import requests
+
+from asin_manager import load_all_asin_lists, load_saved_asins, validate_asin_list
+
+
+class AmazonDeliveryClient:
+    """
+    Handles HTTP calls to Amazon with conservative request pacing.
+    """
+
+    PRODUCT_URL_TEMPLATE = "https://www.amazon.com/dp/{asin}"
+    ADDRESS_CHANGE_URL = "https://www.amazon.com/gp/delivery/ajax/address-change.html"
+
+    def __init__(
+        self,
+        min_delay_sec=2.0,
+        max_delay_sec=5.0,
+        max_retries=3,
+        timeout_sec=30,
+        proxy_url=None,
+    ):
+        self.min_delay_sec = min_delay_sec
+        self.max_delay_sec = max_delay_sec
+        self.max_retries = max_retries
+        self.timeout_sec = timeout_sec
+        self.proxy_url = proxy_url.strip() if isinstance(proxy_url, str) else ""
+
+        self.session = requests.Session()
+        self.session.headers.update(
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Accept": (
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                    "image/avif,image/webp,*/*;q=0.8"
+                ),
+                "Accept-Language": "en-US,en;q=0.9",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
+                "Upgrade-Insecure-Requests": "1",
+                "DNT": "1",
+            }
+        )
+
+        if self.proxy_url:
+            self.session.proxies = {"http": self.proxy_url, "https": self.proxy_url}
+
+    def _throttle(self):
+        """Sleep with jitter between requests to reduce bursty traffic."""
+        sleep_seconds = random.uniform(self.min_delay_sec, self.max_delay_sec)
+        if sleep_seconds > 0:
+            time.sleep(sleep_seconds)
+
+    def _request_get(self, url, params=None):
+        """
+        GET wrapper with retries + exponential backoff.
+        """
+        last_error = None
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                self._throttle()
+                response = self.session.get(url, params=params, timeout=self.timeout_sec)
+
+                if response.status_code in (429, 500, 502, 503, 504):
+                    last_error = (
+                        f"Amazon returned HTTP {response.status_code} "
+                        f"(attempt {attempt + 1}/{self.max_retries + 1})."
+                    )
+                else:
+                    return response, None
+            except requests.exceptions.RequestException as exc:
+                last_error = f"Request error: {exc}"
+
+            if attempt < self.max_retries:
+                backoff = min(2 ** attempt, 20) + random.uniform(0.2, 1.5)
+                time.sleep(backoff)
+
+        return None, last_error
+
+    def _request_post(self, url, data, headers=None):
+        """
+        POST wrapper with retries + exponential backoff.
+        """
+        last_error = None
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                self._throttle()
+                response = self.session.post(
+                    url,
+                    data=data,
+                    headers=headers,
+                    timeout=self.timeout_sec,
+                )
+
+                if response.status_code in (429, 500, 502, 503, 504):
+                    last_error = (
+                        f"Amazon returned HTTP {response.status_code} "
+                        f"(attempt {attempt + 1}/{self.max_retries + 1})."
+                    )
+                else:
+                    return response, None
+            except requests.exceptions.RequestException as exc:
+                last_error = f"Request error: {exc}"
+
+            if attempt < self.max_retries:
+                backoff = min(2 ** attempt, 20) + random.uniform(0.2, 1.5)
+                time.sleep(backoff)
+
+        return None, last_error
+
+    @staticmethod
+    def _is_captcha_page(html_text):
+        if not html_text:
+            return False
+        lowered = html_text.lower()
+        return (
+            "sorry, we just need to make sure you're not a robot" in lowered
+            or "/errors/validatecaptcha" in lowered
+            or "enter the characters you see below" in lowered
+        )
+
+    @staticmethod
+    def _extract_anti_csrf_token(html_text):
+        """
+        Extract anti-csrftoken-a2z token when available.
+        """
+        token_patterns = [
+            r'"anti-csrftoken-a2z"\s*:\s*"([^"]+)"',
+            r'name="anti-csrftoken-a2z"\s+value="([^"]+)"',
+            r'anti-csrftoken-a2z=([A-Za-z0-9%._\-]+)',
+        ]
+        for pattern in token_patterns:
+            match = re.search(pattern, html_text, flags=re.IGNORECASE)
+            if match:
+                return unescape(match.group(1))
+        return None
+
+    def _set_zip_code(self, asin, zip_code):
+        """
+        Best-effort ZIP switch via Amazon's address-change endpoint.
+        """
+        product_url = self.PRODUCT_URL_TEMPLATE.format(asin=asin)
+        first_page, first_error = self._request_get(product_url)
+        if first_error:
+            return False, first_error
+
+        first_html = first_page.text if first_page is not None else ""
+        if self._is_captcha_page(first_html):
+            return False, "Captcha encountered before ZIP update."
+
+        csrf_token = self._extract_anti_csrf_token(first_html)
+        form_data = {
+            "locationType": "LOCATION_INPUT",
+            "zipCode": zip_code[:5],
+            "storeContext": "generic",
+            "deviceType": "web",
+            "pageType": "Detail",
+            "actionSource": "glow",
+        }
+        if csrf_token:
+            form_data["anti-csrftoken-a2z"] = csrf_token
+
+        headers = {
+            "X-Requested-With": "XMLHttpRequest",
+            "Origin": "https://www.amazon.com",
+            "Referer": product_url,
+        }
+        _, post_error = self._request_post(self.ADDRESS_CHANGE_URL, form_data, headers=headers)
+
+        if post_error:
+            # Keep running even if ZIP switch fails; the next request may still return data.
+            return False, post_error
+
+        return True, None
+
+    @staticmethod
+    def _strip_html(html_text):
+        """
+        Remove scripts/styles/tags and normalize spaces.
+        """
+        if not html_text:
+            return ""
+        text = re.sub(r"(?is)<script.*?>.*?</script>", " ", html_text)
+        text = re.sub(r"(?is)<style.*?>.*?</style>", " ", text)
+        text = re.sub(r"(?is)<[^>]+>", " ", text)
+        text = unescape(text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    @classmethod
+    def extract_delivery_message(cls, html_text):
+        """
+        Attempt to extract delivery copy from product page content.
+        """
+        if not html_text:
+            return None
+        if cls._is_captcha_page(html_text):
+            return None
+
+        direct_patterns = [
+            r'id="mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE"[^>]*>(.*?)<',
+            r'id="mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_SMALL"[^>]*>(.*?)<',
+            r'id="deliveryBlockMessage"[^>]*>(.*?)<',
+            r'id="ddmDeliveryMessage"[^>]*>(.*?)<',
+            r'id="delivery-message"[^>]*>(.*?)<',
+        ]
+        for pattern in direct_patterns:
+            match = re.search(pattern, html_text, flags=re.IGNORECASE | re.DOTALL)
+            if not match:
+                continue
+            candidate = cls._strip_html(match.group(1))
+            if cls._looks_like_delivery_text(candidate):
+                return candidate
+
+        flat_text = cls._strip_html(html_text)
+        phrase_patterns = [
+            r"(?:free\s+)?delivery[^.!\n]{0,160}",
+            r"get it[^.!\n]{0,160}",
+            r"arrives[^.!\n]{0,160}",
+            r"usually ships[^.!\n]{0,160}",
+            r"ships in[^.!\n]{0,160}",
+        ]
+        for pattern in phrase_patterns:
+            match = re.search(pattern, flat_text, flags=re.IGNORECASE)
+            if match:
+                candidate = re.sub(r"\s+", " ", match.group(0)).strip(" -:|")
+                if cls._looks_like_delivery_text(candidate):
+                    return candidate
+
+        return None
+
+    @staticmethod
+    def _looks_like_delivery_text(text):
+        if not text:
+            return False
+        lowered = text.lower()
+        keywords = ["delivery", "arrives", "ships", "tomorrow", "today", "overnight"]
+        return any(keyword in lowered for keyword in keywords)
+
+    @staticmethod
+    def estimate_delivery_days(delivery_text, now=None):
+        """
+        Convert delivery copy into a numeric day estimate when possible.
+        """
+        if not delivery_text:
+            return None
+
+        now = now or datetime.now()
+        text = delivery_text.strip()
+        lowered = text.lower()
+
+        if "today" in lowered:
+            return 0
+        if "overnight" in lowered or "tomorrow" in lowered:
+            return 1
+
+        range_match = re.search(
+            r"(\d+)\s*(?:-|to)\s*(\d+)\s*(?:business\s*)?days?",
+            lowered,
+            flags=re.IGNORECASE,
+        )
+        if range_match:
+            return int(range_match.group(2))
+
+        single_match = re.search(
+            r"(?:within|in)\s+(\d+)\s*(?:business\s*)?days?",
+            lowered,
+            flags=re.IGNORECASE,
+        )
+        if single_match:
+            return int(single_match.group(1))
+
+        # Parse month/day style strings: "March 18" or "Mar 18".
+        month_day_match = re.search(
+            r"\b("
+            r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+            r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|"
+            r"nov(?:ember)?|dec(?:ember)?"
+            r")\.?,?\s+(\d{1,2})\b",
+            lowered,
+            flags=re.IGNORECASE,
+        )
+        if month_day_match:
+            month_text = month_day_match.group(1).replace(".", "").title()
+            day_number = int(month_day_match.group(2))
+            parsed_date = None
+            for fmt in ("%b %d", "%B %d"):
+                try:
+                    candidate = datetime.strptime(f"{month_text} {day_number}", fmt)
+                    parsed_date = candidate.replace(year=now.year)
+                    break
+                except ValueError:
+                    continue
+
+            if parsed_date:
+                if parsed_date.date() < now.date() - timedelta(days=2):
+                    parsed_date = parsed_date.replace(year=now.year + 1)
+                delta_days = (parsed_date.date() - now.date()).days
+                return max(delta_days, 0)
+
+        weekday_map = {
+            "monday": 0,
+            "tuesday": 1,
+            "wednesday": 2,
+            "thursday": 3,
+            "friday": 4,
+            "saturday": 5,
+            "sunday": 6,
+        }
+        for weekday_name, weekday_index in weekday_map.items():
+            if weekday_name in lowered:
+                current_weekday = now.weekday()
+                diff = (weekday_index - current_weekday) % 7
+                return diff
+
+        return None
+
+    @staticmethod
+    def extract_displayed_zip(html_text):
+        """
+        Best-effort ZIP extraction from rendered page content.
+        """
+        if not html_text:
+            return None
+
+        glow_match = re.search(
+            r'id="glow-ingress-line2"[^>]*>(.*?)<',
+            html_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if glow_match:
+            glow_text = AmazonDeliveryClient._strip_html(glow_match.group(1))
+            zip_match = re.search(r"\b\d{5}(?:-\d{4})?\b", glow_text)
+            if zip_match:
+                return zip_match.group(0)
+
+        json_zip_match = re.search(r'"zipCode"\s*:\s*"(\d{5}(?:-\d{4})?)"', html_text)
+        if json_zip_match:
+            return json_zip_match.group(1)
+
+        return None
+
+    def fetch_delivery_speed(self, asin, zip_code):
+        """
+        Fetch delivery details for a single ASIN + ZIP pair.
+        """
+        result = {
+            "asin": asin,
+            "zip_code": zip_code,
+            "delivery_text": None,
+            "estimated_days": None,
+            "displayed_zip": None,
+            "zip_verified": False,
+            "status": "error",
+            "error": None,
+        }
+
+        zip_set, zip_error = self._set_zip_code(asin, zip_code)
+
+        product_url = self.PRODUCT_URL_TEMPLATE.format(asin=asin)
+        page_response, page_error = self._request_get(product_url, params={"zipCode": zip_code[:5]})
+        if page_error:
+            result["error"] = page_error
+            return result
+
+        html_text = page_response.text if page_response is not None else ""
+        if self._is_captcha_page(html_text):
+            result["status"] = "captcha"
+            result["error"] = "Captcha encountered. Slow down requests or use a trusted proxy/session."
+            return result
+
+        result["displayed_zip"] = self.extract_displayed_zip(html_text)
+        if result["displayed_zip"]:
+            result["zip_verified"] = result["displayed_zip"].startswith(zip_code[:5])
+
+        delivery_text = self.extract_delivery_message(html_text)
+        if not delivery_text:
+            result["status"] = "not_found"
+            result["error"] = (
+                "Delivery message not found on product page."
+                if zip_set
+                else f"ZIP update uncertain; message missing ({zip_error or 'unknown reason'})."
+            )
+            return result
+
+        result["delivery_text"] = delivery_text
+        result["estimated_days"] = self.estimate_delivery_days(delivery_text)
+        result["status"] = "ok"
+
+        if not zip_set and zip_error:
+            result["error"] = f"ZIP update warning: {zip_error}"
+        return result
+
+
+class DeliverySpeedTracker:
+    """
+    Tkinter flow to gather ASIN/ZIP inputs and display delivery speed matrix.
+    """
+
+    def get_user_input(self, parent_window=None):
+        root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
+        root.title("Delivery Speed by ZIP - Input")
+        root.resizable(True, True)
+        root.minsize(760, 700)
+
+        root.update_idletasks()
+        width = 820
+        height = 760
+        x = (root.winfo_screenwidth() // 2) - (width // 2)
+        y = (root.winfo_screenheight() // 2) - (height // 2)
+        root.geometry(f"{width}x{height}+{x}+{y}")
+
+        root.lift()
+        root.attributes("-topmost", True)
+        root.after_idle(lambda: root.attributes("-topmost", False))
+
+        result_var = [None]
+
+        asins_var = tk.StringVar()
+        zips_var = tk.StringVar()
+        min_delay_var = tk.StringVar(value="2.0")
+        max_delay_var = tk.StringVar(value="5.0")
+        retries_var = tk.StringVar(value="3")
+        timeout_var = tk.StringVar(value="30")
+        proxy_var = tk.StringVar()
+        export_var = tk.BooleanVar(value=True)
+
+        def parse_zip_list(raw_text):
+            candidates = re.split(r"[,\n\s]+", raw_text.strip())
+            valid = []
+            invalid = []
+            seen = set()
+            for token in candidates:
+                token = token.strip()
+                if not token:
+                    continue
+                if re.match(r"^\d{5}(?:-\d{4})?$", token):
+                    normalized = token[:5]
+                    if normalized not in seen:
+                        seen.add(normalized)
+                        valid.append(normalized)
+                else:
+                    invalid.append(token)
+            return valid, invalid
+
+        def load_all_saved_asins():
+            asins = load_saved_asins()
+            if not asins:
+                messagebox.showinfo("No ASINs", "No saved ASINs found.", parent=root)
+                return
+            asin_text.delete("1.0", tk.END)
+            asin_text.insert("1.0", "\n".join(sorted(asins)))
+
+        def load_asins_from_list():
+            lists_data = load_all_asin_lists()
+            if not lists_data:
+                messagebox.showinfo("No Lists", "No ASIN lists found.", parent=root)
+                return
+
+            pick_window = tk.Toplevel(root)
+            pick_window.title("Select ASIN List")
+            pick_window.transient(root)
+            pick_window.grab_set()
+            pick_window.resizable(False, False)
+            pick_window.geometry("380x180")
+
+            ttk.Label(pick_window, text="Choose list:").pack(pady=(20, 8))
+            list_var = tk.StringVar(value=sorted(lists_data.keys())[0])
+            combo = ttk.Combobox(
+                pick_window,
+                textvariable=list_var,
+                values=sorted(lists_data.keys()),
+                state="readonly",
+                width=36,
+            )
+            combo.pack()
+
+            def apply_list():
+                selected = list_var.get()
+                asins = lists_data.get(selected, {}).get("asins", [])
+                asin_text.delete("1.0", tk.END)
+                asin_text.insert("1.0", "\n".join(sorted(asins)))
+                pick_window.destroy()
+
+            ttk.Button(pick_window, text="Load", command=apply_list, style="Accent.TButton").pack(pady=20)
+            pick_window.wait_window()
+
+        def submit():
+            asin_raw = asin_text.get("1.0", tk.END).strip()
+            valid_asins, asin_error = validate_asin_list(asin_raw)
+            if asin_error:
+                messagebox.showerror("Validation Error", asin_error, parent=root)
+                return
+            if not valid_asins:
+                messagebox.showerror("Validation Error", "Please provide at least one valid ASIN.", parent=root)
+                return
+
+            zip_raw = zip_text.get("1.0", tk.END).strip()
+            valid_zips, invalid_zips = parse_zip_list(zip_raw)
+            if invalid_zips:
+                preview = ", ".join(invalid_zips[:6])
+                if len(invalid_zips) > 6:
+                    preview += f" ... and {len(invalid_zips) - 6} more"
+                messagebox.showerror(
+                    "Validation Error",
+                    f"Invalid ZIP code(s): {preview}\nUse 5-digit ZIP format (example: 10001).",
+                    parent=root,
+                )
+                return
+            if not valid_zips:
+                messagebox.showerror("Validation Error", "Please provide at least one ZIP code.", parent=root)
+                return
+
+            try:
+                min_delay = float(min_delay_var.get().strip())
+                max_delay = float(max_delay_var.get().strip())
+                retries = int(retries_var.get().strip())
+                timeout = int(timeout_var.get().strip())
+            except ValueError:
+                messagebox.showerror(
+                    "Validation Error",
+                    "Delay values must be numbers, retries/timeout must be integers.",
+                    parent=root,
+                )
+                return
+
+            if min_delay < 0 or max_delay < 0 or max_delay < min_delay:
+                messagebox.showerror(
+                    "Validation Error",
+                    "Delay values must be non-negative and max delay must be >= min delay.",
+                    parent=root,
+                )
+                return
+
+            if retries < 0 or retries > 10:
+                messagebox.showerror("Validation Error", "Retries must be between 0 and 10.", parent=root)
+                return
+
+            if timeout < 5 or timeout > 180:
+                messagebox.showerror("Validation Error", "Timeout must be between 5 and 180 seconds.", parent=root)
+                return
+
+            total_calls = len(valid_asins) * len(valid_zips)
+            if total_calls > 100 and min_delay < 2:
+                continue_run = messagebox.askyesno(
+                    "Rate Limit Warning",
+                    (
+                        f"You are about to run {total_calls} ASIN/ZIP checks with very low delay.\n\n"
+                        "This increases risk of bot challenges or temporary IP throttling.\n"
+                        "Recommended: min delay >= 2 seconds.\n\n"
+                        "Continue anyway?"
+                    ),
+                    parent=root,
+                )
+                if not continue_run:
+                    return
+
+            result_var[0] = {
+                "asins": valid_asins,
+                "zips": valid_zips,
+                "min_delay_sec": min_delay,
+                "max_delay_sec": max_delay,
+                "max_retries": retries,
+                "timeout_sec": timeout,
+                "proxy_url": proxy_var.get().strip(),
+                "export_csv": export_var.get(),
+            }
+            root.destroy()
+
+        def cancel():
+            root.destroy()
+
+        main_frame = ttk.Frame(root, padding="16")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        title = ttk.Label(main_frame, text="Delivery Speed by ZIP", font=("Arial", 18, "bold"))
+        title.pack(anchor=tk.W, pady=(0, 10))
+
+        subtitle = ttk.Label(
+            main_frame,
+            text=(
+                "Checks Amazon product pages for delivery message text and estimates delivery days.\n"
+                "Use conservative delays to reduce bot detection risk."
+            ),
+            foreground="gray",
+        )
+        subtitle.pack(anchor=tk.W, pady=(0, 14))
+
+        asin_frame = ttk.LabelFrame(main_frame, text="ASINs", padding="10")
+        asin_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        asin_btns = ttk.Frame(asin_frame)
+        asin_btns.pack(fill=tk.X, pady=(0, 8))
+        ttk.Button(asin_btns, text="Load All Saved ASINs", command=load_all_saved_asins).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(asin_btns, text="Load from List", command=load_asins_from_list).pack(side=tk.LEFT)
+
+        asin_text = tk.Text(asin_frame, height=9)
+        asin_text.pack(fill=tk.BOTH, expand=True)
+        asin_text.insert("1.0", asins_var.get())
+
+        zip_frame = ttk.LabelFrame(main_frame, text="ZIP Codes", padding="10")
+        zip_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        zip_help = ttk.Label(zip_frame, text="Enter 5-digit ZIPs separated by comma, space, or newline.")
+        zip_help.pack(anchor=tk.W, pady=(0, 5))
+        zip_text = tk.Text(zip_frame, height=6)
+        zip_text.pack(fill=tk.BOTH, expand=True)
+        zip_text.insert("1.0", zips_var.get())
+
+        settings_frame = ttk.LabelFrame(main_frame, text="Request Safety Settings", padding="10")
+        settings_frame.pack(fill=tk.X, pady=(0, 12))
+
+        settings_grid = ttk.Frame(settings_frame)
+        settings_grid.pack(fill=tk.X)
+        settings_grid.columnconfigure(1, weight=1)
+        settings_grid.columnconfigure(3, weight=1)
+
+        ttk.Label(settings_grid, text="Min Delay (sec):").grid(row=0, column=0, sticky=tk.W, padx=(0, 6), pady=4)
+        ttk.Entry(settings_grid, textvariable=min_delay_var, width=10).grid(row=0, column=1, sticky=tk.W, pady=4)
+
+        ttk.Label(settings_grid, text="Max Delay (sec):").grid(row=0, column=2, sticky=tk.W, padx=(20, 6), pady=4)
+        ttk.Entry(settings_grid, textvariable=max_delay_var, width=10).grid(row=0, column=3, sticky=tk.W, pady=4)
+
+        ttk.Label(settings_grid, text="Max Retries:").grid(row=1, column=0, sticky=tk.W, padx=(0, 6), pady=4)
+        ttk.Entry(settings_grid, textvariable=retries_var, width=10).grid(row=1, column=1, sticky=tk.W, pady=4)
+
+        ttk.Label(settings_grid, text="Timeout (sec):").grid(row=1, column=2, sticky=tk.W, padx=(20, 6), pady=4)
+        ttk.Entry(settings_grid, textvariable=timeout_var, width=10).grid(row=1, column=3, sticky=tk.W, pady=4)
+
+        ttk.Label(settings_grid, text="Optional Proxy URL:").grid(row=2, column=0, sticky=tk.W, padx=(0, 6), pady=4)
+        ttk.Entry(settings_grid, textvariable=proxy_var).grid(row=2, column=1, columnspan=3, sticky=(tk.W, tk.E), pady=4)
+
+        ttk.Checkbutton(main_frame, text="Export results to CSV", variable=export_var).pack(anchor=tk.W, pady=(0, 12))
+
+        action_frame = ttk.Frame(main_frame)
+        action_frame.pack(fill=tk.X)
+        ttk.Button(action_frame, text="Run", command=submit, style="Accent.TButton").pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(action_frame, text="Cancel", command=cancel).pack(side=tk.LEFT)
+
+        if not parent_window:
+            root.mainloop()
+        else:
+            root.wait_window()
+
+        return result_var[0]
+
+    def process_and_display_results(self, config, parent_window=None):
+        asins = config["asins"]
+        zips = config["zips"]
+
+        client = AmazonDeliveryClient(
+            min_delay_sec=config["min_delay_sec"],
+            max_delay_sec=config["max_delay_sec"],
+            max_retries=config["max_retries"],
+            timeout_sec=config["timeout_sec"],
+            proxy_url=config["proxy_url"],
+        )
+
+        total = len(asins) * len(zips)
+        results = []
+
+        progress_window = tk.Toplevel(parent_window) if parent_window else tk.Tk()
+        progress_window.title("Checking Delivery Speeds")
+        progress_window.geometry("620x220")
+        progress_window.resizable(False, False)
+        progress_window.lift()
+        progress_window.attributes("-topmost", True)
+
+        progress_window.update_idletasks()
+        x = (progress_window.winfo_screenwidth() // 2) - (620 // 2)
+        y = (progress_window.winfo_screenheight() // 2) - (220 // 2)
+        progress_window.geometry(f"620x220+{x}+{y}")
+
+        ttk.Label(progress_window, text="Running ASIN + ZIP checks...", font=("Arial", 12)).pack(pady=(20, 14))
+        progress = ttk.Progressbar(progress_window, length=420, mode="determinate", maximum=total)
+        progress.pack()
+        status_var = tk.StringVar(value="Starting...")
+        ttk.Label(progress_window, textvariable=status_var, foreground="gray").pack(pady=(12, 0))
+
+        completed = 0
+        for asin in asins:
+            for zip_code in zips:
+                completed += 1
+                status_var.set(f"{completed}/{total} | ASIN {asin} | ZIP {zip_code}")
+                progress["value"] = completed
+                progress_window.update()
+
+                row = client.fetch_delivery_speed(asin, zip_code)
+                results.append(row)
+
+        progress_window.destroy()
+
+        result_root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
+        result_root.title("Delivery Speed by ZIP - Results")
+        result_root.resizable(True, True)
+        result_root.minsize(1200, 760)
+
+        result_root.update_idletasks()
+        width = int(result_root.winfo_screenwidth() * 0.95)
+        height = int(result_root.winfo_screenheight() * 0.9)
+        x = (result_root.winfo_screenwidth() - width) // 2
+        y = (result_root.winfo_screenheight() - height) // 2
+        result_root.geometry(f"{width}x{height}+{x}+{y}")
+        result_root.lift()
+        result_root.attributes("-topmost", True)
+        result_root.after_idle(lambda: result_root.attributes("-topmost", False))
+
+        container = ttk.Frame(result_root, padding="12")
+        container.pack(fill=tk.BOTH, expand=True)
+
+        ok_count = sum(1 for row in results if row["status"] == "ok")
+        captcha_count = sum(1 for row in results if row["status"] == "captcha")
+        fail_count = sum(1 for row in results if row["status"] not in ("ok", "captcha"))
+
+        summary_text = (
+            f"Completed {len(results)} checks | "
+            f"OK: {ok_count} | Captcha: {captcha_count} | Other issues: {fail_count}"
+        )
+        ttk.Label(container, text=summary_text, font=("Arial", 11, "bold")).pack(anchor=tk.W, pady=(0, 8))
+
+        info_text = (
+            "Tip: If captcha counts are high, increase delays, reduce batch size, "
+            "or use a trusted proxy/session."
+        )
+        ttk.Label(container, text=info_text, foreground="gray").pack(anchor=tk.W, pady=(0, 10))
+
+        columns = (
+            "asin",
+            "zip_code",
+            "estimated_days",
+            "delivery_text",
+            "status",
+            "zip_verified",
+            "displayed_zip",
+            "error",
+        )
+        tree = ttk.Treeview(container, columns=columns, show="headings", height=18)
+        tree.heading("asin", text="ASIN")
+        tree.heading("zip_code", text="ZIP Requested")
+        tree.heading("estimated_days", text="Est. Days")
+        tree.heading("delivery_text", text="Delivery Message")
+        tree.heading("status", text="Status")
+        tree.heading("zip_verified", text="ZIP Verified")
+        tree.heading("displayed_zip", text="ZIP on Page")
+        tree.heading("error", text="Error / Notes")
+
+        tree.column("asin", width=120, anchor=tk.W)
+        tree.column("zip_code", width=100, anchor=tk.W)
+        tree.column("estimated_days", width=90, anchor=tk.CENTER)
+        tree.column("delivery_text", width=420, anchor=tk.W)
+        tree.column("status", width=90, anchor=tk.W)
+        tree.column("zip_verified", width=90, anchor=tk.CENTER)
+        tree.column("displayed_zip", width=100, anchor=tk.W)
+        tree.column("error", width=280, anchor=tk.W)
+
+        scrollbar_y = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
+        scrollbar_x = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=tree.xview)
+        tree.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
+
+        tree.pack(fill=tk.BOTH, expand=True)
+        scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar_x.pack(fill=tk.X)
+
+        tree.tag_configure("ok", background="#EAF8EA")
+        tree.tag_configure("captcha", background="#FFF4E5")
+        tree.tag_configure("error", background="#FDECEC")
+
+        for row in results:
+            if row["status"] == "ok":
+                tag = "ok"
+            elif row["status"] == "captcha":
+                tag = "captcha"
+            else:
+                tag = "error"
+
+            tree.insert(
+                "",
+                tk.END,
+                values=(
+                    row.get("asin", ""),
+                    row.get("zip_code", ""),
+                    row.get("estimated_days", ""),
+                    row.get("delivery_text", "") or "",
+                    row.get("status", ""),
+                    "Yes" if row.get("zip_verified") else "No",
+                    row.get("displayed_zip", "") or "",
+                    row.get("error", "") or "",
+                ),
+                tags=(tag,),
+            )
+
+        details_frame = ttk.LabelFrame(container, text="Selected Row Details", padding="8")
+        details_frame.pack(fill=tk.BOTH, expand=False, pady=(10, 0))
+        details_box = scrolledtext.ScrolledText(details_frame, height=8, wrap=tk.WORD)
+        details_box.pack(fill=tk.BOTH, expand=True)
+        details_box.insert(
+            tk.END,
+            "Click any result row to inspect the full delivery message and notes.",
+        )
+        details_box.config(state=tk.DISABLED)
+
+        def on_select(_event):
+            selection = tree.selection()
+            if not selection:
+                return
+            values = tree.item(selection[0], "values")
+            details_box.config(state=tk.NORMAL)
+            details_box.delete("1.0", tk.END)
+            details_box.insert(
+                tk.END,
+                (
+                    f"ASIN: {values[0]}\n"
+                    f"ZIP requested: {values[1]}\n"
+                    f"Estimated days: {values[2]}\n"
+                    f"Status: {values[4]}\n"
+                    f"ZIP verified on page: {values[5]} (page showed: {values[6]})\n\n"
+                    f"Delivery message:\n{values[3]}\n\n"
+                    f"Error / Notes:\n{values[7]}"
+                ),
+            )
+            details_box.config(state=tk.DISABLED)
+
+        tree.bind("<<TreeviewSelect>>", on_select)
+
+        if config.get("export_csv"):
+            save_path = filedialog.asksaveasfilename(
+                title="Save delivery speed results",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                parent=result_root,
+            )
+            if save_path:
+                pd.DataFrame(results).to_csv(save_path, index=False)
+                messagebox.showinfo(
+                    "Export Complete",
+                    f"Saved {len(results)} result rows to:\n{save_path}",
+                    parent=result_root,
+                )
+            else:
+                messagebox.showinfo("Export Skipped", "No file selected. CSV export skipped.", parent=result_root)
+
+        if parent_window:
+            result_root.wait_window()
+        else:
+            result_root.mainloop()
+
