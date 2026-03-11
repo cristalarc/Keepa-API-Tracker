@@ -15,6 +15,7 @@ import pandas as pd
 import requests
 
 from asin_manager import load_all_asin_lists, load_saved_asins, validate_asin_list
+from delivery_speed_memory import DeliverySpeedMemoryStore
 from zip_list_manager import load_all_zip_lists, parse_zip_list, save_zip_list
 
 
@@ -442,6 +443,7 @@ class DeliverySpeedTracker:
         max_delay_var = tk.StringVar(value="5.0")
         retries_var = tk.StringVar(value="3")
         timeout_var = tk.StringVar(value="30")
+        threshold_days_var = tk.StringVar(value="3")
         proxy_var = tk.StringVar()
         export_var = tk.BooleanVar(value=True)
         zip_lists_data = load_all_zip_lists()
@@ -627,10 +629,11 @@ class DeliverySpeedTracker:
                 max_delay = float(max_delay_var.get().strip())
                 retries = int(retries_var.get().strip())
                 timeout = int(timeout_var.get().strip())
+                threshold_days = int(threshold_days_var.get().strip())
             except ValueError:
                 messagebox.showerror(
                     "Validation Error",
-                    "Delay values must be numbers, retries/timeout must be integers.",
+                    "Delay values must be numbers, and retries/timeout/threshold must be integers.",
                     parent=root,
                 )
                 return
@@ -649,6 +652,14 @@ class DeliverySpeedTracker:
 
             if timeout < 5 or timeout > 180:
                 messagebox.showerror("Validation Error", "Timeout must be between 5 and 180 seconds.", parent=root)
+                return
+
+            if threshold_days < 0 or threshold_days > 30:
+                messagebox.showerror(
+                    "Validation Error",
+                    "Delivery pass threshold must be between 0 and 30 days.",
+                    parent=root,
+                )
                 return
 
             total_calls = len(valid_asins) * len(valid_zips)
@@ -673,6 +684,7 @@ class DeliverySpeedTracker:
                 "max_delay_sec": max_delay,
                 "max_retries": retries,
                 "timeout_sec": timeout,
+                "pass_threshold_days": threshold_days,
                 "proxy_url": proxy_var.get().strip(),
                 "export_csv": export_var.get(),
             }
@@ -755,8 +767,11 @@ class DeliverySpeedTracker:
         ttk.Label(settings_grid, text="Timeout (sec):").grid(row=1, column=2, sticky=tk.W, padx=(20, 6), pady=4)
         ttk.Entry(settings_grid, textvariable=timeout_var, width=10).grid(row=1, column=3, sticky=tk.W, pady=4)
 
-        ttk.Label(settings_grid, text="Optional Proxy URL:").grid(row=2, column=0, sticky=tk.W, padx=(0, 6), pady=4)
-        ttk.Entry(settings_grid, textvariable=proxy_var).grid(row=2, column=1, columnspan=3, sticky=(tk.W, tk.E), pady=4)
+        ttk.Label(settings_grid, text="Pass Threshold (days):").grid(row=2, column=0, sticky=tk.W, padx=(0, 6), pady=4)
+        ttk.Entry(settings_grid, textvariable=threshold_days_var, width=10).grid(row=2, column=1, sticky=tk.W, pady=4)
+
+        ttk.Label(settings_grid, text="Optional Proxy URL:").grid(row=3, column=0, sticky=tk.W, padx=(0, 6), pady=4)
+        ttk.Entry(settings_grid, textvariable=proxy_var).grid(row=3, column=1, columnspan=3, sticky=(tk.W, tk.E), pady=4)
 
         ttk.Checkbutton(main_frame, text="Export results to CSV", variable=export_var).pack(anchor=tk.W, pady=(0, 12))
 
@@ -764,6 +779,10 @@ class DeliverySpeedTracker:
         action_frame.pack(fill=tk.X)
         ttk.Button(action_frame, text="Run", command=submit, style="Accent.TButton").pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(action_frame, text="Cancel", command=cancel).pack(side=tk.LEFT)
+
+        # Keyboard shortcuts make submission accessible on smaller displays.
+        root.bind("<Return>", lambda _e: submit())
+        root.bind("<Escape>", lambda _e: cancel())
 
         if not parent_window:
             root.mainloop()
@@ -775,6 +794,7 @@ class DeliverySpeedTracker:
     def process_and_display_results(self, config, parent_window=None):
         asins = config["asins"]
         zips = config["zips"]
+        threshold_days = int(config.get("pass_threshold_days", 3))
 
         client = AmazonDeliveryClient(
             min_delay_sec=config["min_delay_sec"],
@@ -783,6 +803,7 @@ class DeliverySpeedTracker:
             timeout_sec=config["timeout_sec"],
             proxy_url=config["proxy_url"],
         )
+        memory_store = DeliverySpeedMemoryStore()
 
         total = len(asins) * len(zips)
         results = []
@@ -814,9 +835,18 @@ class DeliverySpeedTracker:
                 progress_window.update()
 
                 row = client.fetch_delivery_speed(asin, zip_code)
+                review_meta = memory_store.log_check(row, threshold_days=threshold_days)
+                row.update(review_meta)
+                row["threshold_days"] = threshold_days
+
+                pair_summary = memory_store.get_pair_summary(asin=row.get("asin", ""), zip_code=row.get("zip_code", ""))
+                row["pair_pass_checks"] = pair_summary["pass_checks"]
+                row["pair_total_checks"] = pair_summary["total_checks"]
+                row["pair_standard_hits"] = f'{pair_summary["pass_checks"]}/{pair_summary["total_checks"]}'
                 results.append(row)
 
         progress_window.destroy()
+        overall_memory = memory_store.get_overall_summary()
 
         result_root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
         result_root.title("Delivery Speed by ZIP - Results")
@@ -838,17 +868,25 @@ class DeliverySpeedTracker:
 
         ok_count = sum(1 for row in results if row["status"] == "ok")
         captcha_count = sum(1 for row in results if row["status"] == "captcha")
-        fail_count = sum(1 for row in results if row["status"] not in ("ok", "captcha"))
+        issue_count = sum(1 for row in results if row["status"] not in ("ok", "captcha"))
+        run_pass_count = sum(1 for row in results if row.get("review") == "PASS")
+        run_fail_count = len(results) - run_pass_count
 
         summary_text = (
-            f"Completed {len(results)} checks | "
-            f"OK: {ok_count} | Captcha: {captcha_count} | Other issues: {fail_count}"
+            f"Current run: {len(results)} checks | Status OK: {ok_count} | Captcha: {captcha_count} | Issues: {issue_count} | "
+            f"PASS: {run_pass_count} | FAIL: {run_fail_count} (threshold <= {threshold_days} days)"
         )
         ttk.Label(container, text=summary_text, font=("Arial", 11, "bold")).pack(anchor=tk.W, pady=(0, 8))
 
+        historical_text = (
+            f"Historical up-to-standard: {overall_memory['pass_checks']} / {overall_memory['total_checks']} checks "
+            f"({overall_memory['pass_rate_percent']:.1f}% pass rate)"
+        )
+        ttk.Label(container, text=historical_text, foreground="#1f4d1f").pack(anchor=tk.W, pady=(0, 8))
+
         info_text = (
             "Tip: If captcha counts are high, increase delays, reduce batch size, "
-            "or use a trusted proxy/session."
+            "or use a trusted proxy/session. Each run is logged with timestamp and pass/fail review."
         )
         ttk.Label(container, text=info_text, foreground="gray").pack(anchor=tk.W, pady=(0, 10))
 
@@ -856,29 +894,44 @@ class DeliverySpeedTracker:
             "asin",
             "zip_code",
             "estimated_days",
-            "delivery_text",
+            "review",
+            "threshold_days",
+            "checked_at",
+            "pair_standard_hits",
+            "review_reason",
             "status",
             "zip_verified",
             "displayed_zip",
+            "delivery_text",
             "error",
         )
         tree = ttk.Treeview(container, columns=columns, show="headings", height=18)
         tree.heading("asin", text="ASIN")
         tree.heading("zip_code", text="ZIP Requested")
         tree.heading("estimated_days", text="Est. Days")
-        tree.heading("delivery_text", text="Delivery Message")
+        tree.heading("review", text="Review")
+        tree.heading("threshold_days", text="Threshold")
+        tree.heading("checked_at", text="Checked At")
+        tree.heading("pair_standard_hits", text="Passes/Checks")
+        tree.heading("review_reason", text="Review Reason")
         tree.heading("status", text="Status")
         tree.heading("zip_verified", text="ZIP Verified")
         tree.heading("displayed_zip", text="ZIP on Page")
+        tree.heading("delivery_text", text="Delivery Message")
         tree.heading("error", text="Error / Notes")
 
         tree.column("asin", width=120, anchor=tk.W)
         tree.column("zip_code", width=100, anchor=tk.W)
         tree.column("estimated_days", width=90, anchor=tk.CENTER)
-        tree.column("delivery_text", width=420, anchor=tk.W)
+        tree.column("review", width=80, anchor=tk.CENTER)
+        tree.column("threshold_days", width=80, anchor=tk.CENTER)
+        tree.column("checked_at", width=145, anchor=tk.W)
+        tree.column("pair_standard_hits", width=110, anchor=tk.CENTER)
+        tree.column("review_reason", width=240, anchor=tk.W)
         tree.column("status", width=90, anchor=tk.W)
         tree.column("zip_verified", width=90, anchor=tk.CENTER)
         tree.column("displayed_zip", width=100, anchor=tk.W)
+        tree.column("delivery_text", width=400, anchor=tk.W)
         tree.column("error", width=280, anchor=tk.W)
 
         scrollbar_y = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
@@ -889,15 +942,18 @@ class DeliverySpeedTracker:
         scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
         scrollbar_x.pack(fill=tk.X)
 
-        tree.tag_configure("ok", background="#EAF8EA")
+        tree.tag_configure("pass", background="#EAF8EA")
+        tree.tag_configure("review_fail", background="#FFF4E5")
         tree.tag_configure("captcha", background="#FFF4E5")
         tree.tag_configure("error", background="#FDECEC")
 
         for row in results:
-            if row["status"] == "ok":
-                tag = "ok"
+            if row.get("review") == "PASS":
+                tag = "pass"
             elif row["status"] == "captcha":
                 tag = "captcha"
+            elif row["status"] == "ok":
+                tag = "review_fail"
             else:
                 tag = "error"
 
@@ -908,10 +964,15 @@ class DeliverySpeedTracker:
                     row.get("asin", ""),
                     row.get("zip_code", ""),
                     row.get("estimated_days", ""),
-                    row.get("delivery_text", "") or "",
+                    row.get("review", ""),
+                    row.get("threshold_days", ""),
+                    row.get("checked_at", ""),
+                    row.get("pair_standard_hits", ""),
+                    row.get("review_reason", ""),
                     row.get("status", ""),
                     "Yes" if row.get("zip_verified") else "No",
                     row.get("displayed_zip", "") or "",
+                    row.get("delivery_text", "") or "",
                     row.get("error", "") or "",
                 ),
                 tags=(tag,),
@@ -940,10 +1001,14 @@ class DeliverySpeedTracker:
                     f"ASIN: {values[0]}\n"
                     f"ZIP requested: {values[1]}\n"
                     f"Estimated days: {values[2]}\n"
-                    f"Status: {values[4]}\n"
-                    f"ZIP verified on page: {values[5]} (page showed: {values[6]})\n\n"
-                    f"Delivery message:\n{values[3]}\n\n"
-                    f"Error / Notes:\n{values[7]}"
+                    f"Review: {values[3]} | Threshold: {values[4]} day(s)\n"
+                    f"Checked at: {values[5]}\n"
+                    f"Historical standards hits for this ASIN+ZIP: {values[6]}\n"
+                    f"Review reason: {values[7]}\n"
+                    f"Status: {values[8]}\n"
+                    f"ZIP verified on page: {values[9]} (page showed: {values[10]})\n\n"
+                    f"Delivery message:\n{values[11]}\n\n"
+                    f"Error / Notes:\n{values[12]}"
                 ),
             )
             details_box.config(state=tk.DISABLED)
