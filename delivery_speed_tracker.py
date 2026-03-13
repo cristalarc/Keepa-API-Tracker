@@ -218,22 +218,35 @@ class AmazonDeliveryClient:
         if cls._is_captcha_page(html_text):
             return None
 
+        # First choice: use structured delivery spans in buybox delivery block.
+        best_structured = cls._extract_best_structured_delivery_candidate(html_text)
+        if best_structured:
+            return best_structured
+
         direct_patterns = [
-            r'id="mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE"[^>]*>(.*?)<',
-            r'id="mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_SMALL"[^>]*>(.*?)<',
-            r'id="deliveryBlockMessage"[^>]*>(.*?)<',
-            r'id="ddmDeliveryMessage"[^>]*>(.*?)<',
-            r'id="delivery-message"[^>]*>(.*?)<',
+            r'id="mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE"[^>]*>(.*?)</div>',
+            r'id="mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_SMALL"[^>]*>(.*?)</div>',
+            r'id="mir-layout-DELIVERY_BLOCK-slot-SECONDARY_DELIVERY_MESSAGE_LARGE"[^>]*>(.*?)</div>',
+            r'id="mir-layout-DELIVERY_BLOCK-slot-SECONDARY_DELIVERY_MESSAGE_SMALL"[^>]*>(.*?)</div>',
+            r'id="deliveryBlockMessage"[^>]*>(.*?)</div>',
+            r'id="ddmDeliveryMessage"[^>]*>(.*?)</div>',
+            r'id="delivery-message"[^>]*>(.*?)</div>',
         ]
+        direct_candidates = []
         for pattern in direct_patterns:
             match = re.search(pattern, html_text, flags=re.IGNORECASE | re.DOTALL)
             if not match:
                 continue
             candidate = cls._strip_html(match.group(1))
-            if cls._looks_like_delivery_text(candidate):
-                return candidate
+            if cls._is_valid_delivery_candidate(candidate):
+                direct_candidates.append(candidate)
 
-        flat_text = cls._strip_html(html_text)
+        if direct_candidates:
+            return cls._select_best_delivery_candidate(direct_candidates)
+
+        # Limit fallback phrase scan to buybox delivery-related sections first.
+        buybox_region = cls._extract_buybox_delivery_region(html_text)
+        flat_text = cls._strip_html(buybox_region) if buybox_region else cls._strip_html(html_text)
         phrase_patterns = [
             r"(?:free\s+)?delivery[^.!\n]{0,160}",
             r"get it[^.!\n]{0,160}",
@@ -241,14 +254,102 @@ class AmazonDeliveryClient:
             r"usually ships[^.!\n]{0,160}",
             r"ships in[^.!\n]{0,160}",
         ]
+        fallback_candidates = []
         for pattern in phrase_patterns:
             match = re.search(pattern, flat_text, flags=re.IGNORECASE)
             if match:
                 candidate = re.sub(r"\s+", " ", match.group(0)).strip(" -:|")
-                if cls._looks_like_delivery_text(candidate):
-                    return candidate
+                if cls._is_valid_delivery_candidate(candidate):
+                    fallback_candidates.append(candidate)
+
+        if fallback_candidates:
+            return cls._select_best_delivery_candidate(fallback_candidates)
 
         return None
+
+    @classmethod
+    def _extract_best_structured_delivery_candidate(cls, html_text):
+        """
+        Parse delivery message spans with explicit delivery-time metadata.
+        """
+        span_pattern = re.compile(
+            r"<span[^>]*data-csa-c-delivery-time=\"([^\"]+)\"[^>]*>(.*?)</span>",
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        candidates = []
+        for match in span_pattern.finditer(html_text):
+            delivery_time = cls._strip_html(match.group(1))
+            raw_text = cls._strip_html(match.group(2))
+            if not delivery_time:
+                continue
+
+            if raw_text:
+                candidate = raw_text
+            else:
+                # Fallback when span text is empty but delivery time is present.
+                candidate = f"FREE delivery {delivery_time}"
+
+            if not cls._is_valid_delivery_candidate(candidate):
+                continue
+
+            candidates.append(candidate)
+
+        if not candidates:
+            return None
+        return cls._select_best_delivery_candidate(candidates)
+
+    @staticmethod
+    def _extract_buybox_delivery_region(html_text):
+        """
+        Narrow fallback search to delivery block areas to avoid Join Prime content.
+        """
+        region_patterns = [
+            r'(<div[^>]+id="deliveryBlockMessage"[^>]*>.*?</div>)',
+            r'(<div[^>]+id="mir-layout-DELIVERY_BLOCK"[^>]*>.*?</div>)',
+        ]
+        for pattern in region_patterns:
+            match = re.search(pattern, html_text, flags=re.IGNORECASE | re.DOTALL)
+            if match:
+                return match.group(1)
+        return None
+
+    @classmethod
+    def _select_best_delivery_candidate(cls, candidates):
+        """
+        Select best candidate prioritizing earliest delivery (especially Prime).
+        """
+        scored = []
+        for candidate in candidates:
+            if not cls._is_valid_delivery_candidate(candidate):
+                continue
+            days = cls.estimate_delivery_days(candidate)
+            lower = candidate.lower()
+            prime_bonus = -1 if "prime" in lower else 0
+            # Unknown days are worst; otherwise pick smallest day value.
+            effective_days = days if isinstance(days, int) else 9999
+            scored.append((effective_days, prime_bonus, len(candidate), candidate))
+
+        if not scored:
+            return None
+
+        scored.sort(key=lambda item: (item[0], item[1], item[2]))
+        return scored[0][3]
+
+    @classmethod
+    def _is_valid_delivery_candidate(cls, text):
+        """
+        Filter delivery candidates and reject Join Prime marketing copy.
+        """
+        if not cls._looks_like_delivery_text(text):
+            return False
+        lowered = text.lower()
+        blocked_phrases = [
+            "exclusive deals",
+            "award-winning movies",
+            "tv shows",
+            "join prime",
+        ]
+        return not any(phrase in lowered for phrase in blocked_phrases)
 
     @staticmethod
     def _looks_like_delivery_text(text):
