@@ -1,0 +1,286 @@
+{
+  "lists": {
+    "Default List": {
+      "asins": [
+        "B00BGIVI1K",
+        "B01M0FE4EL",
+        "B0BC9M6ZC4",
+        "B0BC9KQJPQ",
+        "B0BC9NC5VQ",
+        "B0BC9HSLQN",
+        "B0BC9JMLRC",
+        "B08XRS49CH",
+        "B002GK1G78",
+        "B007ZSVMBG",
+        "B07SVPB4XX",
+        "B0DCPD864K",
+        "B00BGIWCV0"
+      ],
+      "description": "",
+      "product_types": {
+        "B00BGIVI1K": "Unknown",
+        "B01M0FE4EL": "Unknown",
+        "B0BC9M6ZC4": "Unknown",
+        "B0BC9KQJPQ": "Unknown",
+        "B0BC9NC5VQ": "Unknown",
+        "B0BC9HSLQN": "Unknown",
+        "B0BC9JMLRC": "Unknown",
+        "B08XRS49CH": "Unknown",
+        "B002GK1G78": "Unknown",
+        "B007ZSVMBG": "Unknown",
+        "B07SVPB4XX": "Unknown",
+        "B0DCPD864K": "Unknown",
+        "B00BGIWCV0": "Unknown"
+      }
+    },
+    "2.0 ASINS": {
+      "asins": [
+        "B002GK1G78",
+        "B00BGIVI1K",
+        "B07SVPB4XX",
+        "B00BGIWCV0",
+        "B01M0FE4EL",
+        "B007ZSVMBG",
+        "B0DCPD864K"
+      ],
+      "description": "",
+      "product_types": {
+        "B002GK1G78": "Unknown",
+        "B00BGIVI1K": "Unknown",
+        "B07SVPB4XX": "Unknown",
+        "B00BGIWCV0": "Unknown",
+        "B01M0FE4EL": "Unknown",
+        "B007ZSVMBG": "Unknown",
+        "B0DCPD864K": "Unknown"
+      }
+    },
+    "Rogue ASINs": {
+      "asins": [
+        "B00009V2QZ",
+        "B00YCW3ZK4",
+        "B0013DQY4O",
+        "B00009V2QX",
+        "B00RSN95QC",
+        "B007681K6C",
+        "B002UGVWA4",
+        "B0045NGW14",
+        "B0046R2UFQ",
+        "B00009V2QW",
+        "B002YEMWME",
+        "B09HLCJKYF",
+        "B001DZI4GS",
+        "B09HLC6TS9",
+        "B09HLBPWH9",
+        "B00X3Q0L3O",
+        "B00466P6A8",
+        "B017JT0VKI",
+        "B00GNLVH70",
+        "B00LV7TNPO",
+        "B002BU7EEW",
+        "B09HLD3KSK",
+        "B08GQ72TV1",
+        "B00CD5D5Z2",
+        "B09HLC5X6L",
+        "B07CCLT9VT"
+      ],
+      "description": "",
+      "product_types": {
+        "B00009V2QZ": "Unknown",
+        "B00YCW3ZK4": "Unknown",
+        "B0013DQY4O": "Unknown",
+        "B00009V2QX": "Unknown",
+        "B00RSN95QC": "Unknown",
+        "B007681K6C": "Unknown",
+        "B002UGVWA4": "Unknown",
+        "B0045NGW14": "Unknown",
+        "B0046R2UFQ": "Unknown",
+        "B00009V2QW": "Unknown",
+        "B002YEMWME": "Unknown",
+        "B09HLCJKYF": "Unknown",
+        "B001DZI4GS": "Unknown",
+        "B09HLC6TS9": "Unknown",
+        "B09HLBPWH9": "Unknown",
+        "B00X3Q0L3O": "Unknown",
+        "B00466P6A8": "Unknown",
+        "B017JT0VKI": "Unknown",
+        "B00GNLVH70": "Unknown",
+        "B00LV7TNPO": "Unknown",
+        "B002BU7EEW": "Unknown",
+        "B09HLD3KSK": "Unknown",
+        "B08GQ72TV1": "Unknown",
+        "B00CD5D5Z2": "Unknown",
+        "B09HLC5X6L": "Unknown",
+        "B07CCLT9VT": "Unknown"
+      }
+    },
+    "C Industrial": {
+      "asins": [
+        "B0B1Q4XKZJ",
+        "B08H7T1WS9",
+        "B0031Y2B4A",
+        "B07TN49M3V",
+        "B00GNNCXB2",
+        "B00X3Q0L3O",
+        "B086ZKXGSB",
+        "B07MWHQCPW"
+      ],
+      "description": "",
+      "product_types": {
+        "B0B1Q4XKZJ": "Unknown",
+        "B08H7T1WS9": "Unknown",
+        "B0031Y2B4A": "Unknown",
+        "B07TN49M3V": "Unknown",
+        "B00GNNCXB2": "Unknown",
+        "B00X3Q0L3O": "Unknown",
+        "B086ZKXGSB": "Unknown",
+        "B07MWHQCPW": "Unknown"
+      }
+    },
+    "D Industrial": {
+      "asins": [
+        "B09RTVHM2Q",
+        "B0B67X3GZB",
+        "B07HJ79MDT",
+        "B0CCDLG14H",
+        "B00H86D53I",
+        "B07TM1MTML",
+        "B0030BUQGY"
+      ],
+      "description": "",
+      "product_types": {
+        "B09RTVHM2Q": "Unknown",
+        "B0B67X3GZB": "Unknown",
+        "B07HJ79MDT": "Unknown",
+        "B0CCDLG14H": "Unknown",
+        "B00H86D53I": "Unknown",
+        "B07TM1MTML": "Unknown",
+        "B0030BUQGY": "Unknown"
+      }
+    },
+    "AA Industrial": {
+      "asins": [
+        "B01B8R6PF2",
+        "B087GMJXMC",
+        "B08FDPNBF2",
+        "B08ZS8MBKY",
+        "B004SCA15K",
+        "B015EOY7W8",
+        "B07F7RH8D4",
+        "B0CLYZP2Z8",
+        "B07S2LN343",
+        "B07VPQGVBF"
+      ],
+      "description": "",
+      "product_types": {
+        "B01B8R6PF2": "Unknown",
+        "B087GMJXMC": "Unknown",
+        "B08FDPNBF2": "Unknown",
+        "B08ZS8MBKY": "Unknown",
+        "B004SCA15K": "Unknown",
+        "B015EOY7W8": "Unknown",
+        "B07F7RH8D4": "Unknown",
+        "B0CLYZP2Z8": "Unknown",
+        "B07S2LN343": "Unknown",
+        "B07VPQGVBF": "Unknown"
+      }
+    },
+    "AAA Industrial": {
+      "asins": [
+        "B01B8R6V2E",
+        "B01FVPQDYU",
+        "B00FF8KQJC",
+        "B00XWP9H90",
+        "B009PPR5OU",
+        "B06XSKY4P2",
+        "B0D17VYG57",
+        "B0031Y8LS0",
+        "B0CLYZF9N2",
+        "B07QN1DWJ9",
+        "B07VRY1QKT"
+      ],
+      "description": "",
+      "product_types": {
+        "B01B8R6V2E": "Unknown",
+        "B01FVPQDYU": "Unknown",
+        "B00FF8KQJC": "Unknown",
+        "B00XWP9H90": "Unknown",
+        "B009PPR5OU": "Unknown",
+        "B06XSKY4P2": "Unknown",
+        "B0D17VYG57": "Unknown",
+        "B0031Y8LS0": "Unknown",
+        "B0CLYZF9N2": "Unknown",
+        "B07QN1DWJ9": "Unknown",
+        "B07VRY1QKT": "Unknown"
+      }
+    },
+    "9V Industrial": {
+      "asins": [
+        "B07FX6F192",
+        "B08L3KSGXM",
+        "B009W9FHYE",
+        "B00006LHDL"
+      ],
+      "description": "",
+      "product_types": {
+        "B07FX6F192": "Unknown",
+        "B08L3KSGXM": "Unknown",
+        "B009W9FHYE": "Unknown",
+        "B00006LHDL": "Unknown"
+      }
+    },
+    "HPL 123": {
+      "asins": [
+        "B0D4YZ4CHF",
+        "B001W9Y4PK",
+        "B0BZ863ZPZ",
+        "B0DMP4PHNZ",
+        "B0CTK6ZMT4",
+        "B0BVLZ5LJZ",
+        "B0DMSP58W3",
+        "B0DDPP3T7R",
+        "B07TDNWH44"
+      ],
+      "description": "",
+      "product_types": {
+        "B0D4YZ4CHF": "Unknown",
+        "B001W9Y4PK": "Unknown",
+        "B0BZ863ZPZ": "Unknown",
+        "B0DMP4PHNZ": "Unknown",
+        "B0CTK6ZMT4": "Unknown",
+        "B0BVLZ5LJZ": "Unknown",
+        "B0DMSP58W3": "Unknown",
+        "B0DDPP3T7R": "Unknown",
+        "B07TDNWH44": "Unknown"
+      }
+    },
+    "CR 2032": {
+      "asins": [
+        "B0CH1N7X5W",
+        "B07LGLT534",
+        "B08FGMCDNM",
+        "B01FMWDTDU",
+        "B078GC5K81",
+        "B085766B4V",
+        "B0DHTS7WCR",
+        "B00TYA8BVC",
+        "B015JR47T8",
+        "B081DR39YW",
+        "B08FD47379"
+      ],
+      "description": "",
+      "product_types": {
+        "B0CH1N7X5W": "Unknown",
+        "B07LGLT534": "Unknown",
+        "B08FGMCDNM": "Unknown",
+        "B01FMWDTDU": "Unknown",
+        "B078GC5K81": "Unknown",
+        "B085766B4V": "Unknown",
+        "B0DHTS7WCR": "Unknown",
+        "B00TYA8BVC": "Unknown",
+        "B015JR47T8": "Unknown",
+        "B081DR39YW": "Unknown",
+        "B08FD47379": "Unknown"
+      }
+    }
+  }
+}

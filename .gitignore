@@ -1,6 +1,5 @@
 .env.local
-saved_asins.json
 debug_files
 __pycache__/
 *.pyc
-price_tracking.db
+

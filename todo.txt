@@ -1,5 +1,9 @@
-- A way to easy share and load ASIN lists
-
+- Add a way to track competitor's delivery speed and compare to ours.
+- Add a way to track ASINs 30D revenue.
+- Add a way to run the Price Tracker on all lists at once.
+- Add a way to export Price tracking data.
+- How to do I see the delivery speed history?
+- Add buybox detection to delivery speed.
 
 Bugs:
 
