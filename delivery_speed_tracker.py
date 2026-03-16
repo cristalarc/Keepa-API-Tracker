@@ -220,8 +220,7 @@ class AmazonDeliveryClient:
 
         # First choice: use structured delivery spans in buybox delivery block.
         best_structured = cls._extract_best_structured_delivery_candidate(html_text)
-        if best_structured:
-            return best_structured
+        structured_candidates = [best_structured] if best_structured else []
 
         direct_patterns = [
             r'id="mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE"[^>]*>(.*?)</div>',
@@ -241,15 +240,12 @@ class AmazonDeliveryClient:
             if cls._is_valid_delivery_candidate(candidate):
                 direct_candidates.append(candidate)
 
-        if direct_candidates:
-            return cls._select_best_delivery_candidate(direct_candidates)
-
         # Limit fallback phrase scan to buybox delivery-related sections first.
         buybox_region = cls._extract_buybox_delivery_region(html_text)
         flat_text = cls._strip_html(buybox_region) if buybox_region else cls._strip_html(html_text)
         phrase_patterns = [
-            r"(?:or\s+)?fastest\s+delivery[^.!\n]{0,200}",
-            r"(?:free\s+)?delivery[^.!\n]{0,160}",
+            r"\b(?:or\s+)?fastest\s+delivery[^.!\n]{0,200}",
+            r"\b(?:prime\s+members\s+get\s+)?(?:free\s+)?delivery[^.!\n]{0,200}",
             r"get it[^.!\n]{0,160}",
             r"arrives[^.!\n]{0,160}",
             r"usually ships[^.!\n]{0,160}",
@@ -268,8 +264,18 @@ class AmazonDeliveryClient:
                 seen_candidates.add(candidate_key)
                 fallback_candidates.append(candidate)
 
-        if fallback_candidates:
-            return cls._select_best_delivery_candidate(fallback_candidates)
+        all_candidates = []
+        seen_candidates = set()
+        for candidate_group in (structured_candidates, direct_candidates, fallback_candidates):
+            for candidate in candidate_group:
+                normalized_key = re.sub(r"\s+", " ", (candidate or "").strip()).lower()
+                if not normalized_key or normalized_key in seen_candidates:
+                    continue
+                seen_candidates.add(normalized_key)
+                all_candidates.append(candidate)
+
+        if all_candidates:
+            return cls._select_best_delivery_candidate(all_candidates)
 
         return None
 
@@ -362,6 +368,35 @@ class AmazonDeliveryClient:
         """
         text = re.sub(r"\s+", " ", (candidate or "").strip())
         lower = text.lower()
+        delivery_start_match = re.search(
+            r"\b("
+            r"fastest delivery|"
+            r"prime members get free delivery|"
+            r"free delivery|"
+            r"delivery|"
+            r"get it|arrives|usually ships|ships in"
+            r")\b",
+            lower,
+        )
+        if delivery_start_match and delivery_start_match.start() > 0:
+            text = text[delivery_start_match.start():].strip(" .")
+            lower = text.lower()
+
+        if re.search(r"\s+\bor\b\s+", lower):
+            parts = [part.strip(" .") for part in re.split(r"\s+\bor\b\s+", text, flags=re.IGNORECASE)]
+            delivery_parts = [part for part in parts if AmazonDeliveryClient._looks_like_delivery_text(part)]
+            if delivery_parts:
+                text = min(
+                    delivery_parts,
+                    key=lambda part: (
+                        AmazonDeliveryClient.estimate_delivery_days(part)
+                        if isinstance(AmazonDeliveryClient.estimate_delivery_days(part), int)
+                        else 9999,
+                        len(part),
+                    ),
+                )
+                lower = text.lower()
+
         fastest_index = lower.find("fastest delivery")
         if fastest_index > 0:
             # Include leading "Or " when present for readability.
@@ -436,16 +471,16 @@ class AmazonDeliveryClient:
             return int(single_match.group(1))
 
         # Parse month/day style strings: "March 18" or "Mar 18".
-        month_day_match = re.search(
+        month_day_pattern = re.compile(
             r"\b("
             r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
             r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|"
             r"nov(?:ember)?|dec(?:ember)?"
             r")\.?,?\s+(\d{1,2})\b",
-            lowered,
             flags=re.IGNORECASE,
         )
-        if month_day_match:
+        parsed_month_day_deltas = []
+        for month_day_match in month_day_pattern.finditer(lowered):
             month_text = month_day_match.group(1).replace(".", "").title()
             day_number = int(month_day_match.group(2))
             parsed_date = None
@@ -457,11 +492,14 @@ class AmazonDeliveryClient:
                 except ValueError:
                     continue
 
-            if parsed_date:
-                if parsed_date.date() < now.date() - timedelta(days=2):
-                    parsed_date = parsed_date.replace(year=now.year + 1)
-                delta_days = (parsed_date.date() - now.date()).days
-                return max(delta_days, 0)
+            if not parsed_date:
+                continue
+            if parsed_date.date() < now.date() - timedelta(days=2):
+                parsed_date = parsed_date.replace(year=now.year + 1)
+            delta_days = (parsed_date.date() - now.date()).days
+            parsed_month_day_deltas.append(max(delta_days, 0))
+        if parsed_month_day_deltas:
+            return min(parsed_month_day_deltas)
 
         weekday_map = {
             "monday": 0,
@@ -472,11 +510,14 @@ class AmazonDeliveryClient:
             "saturday": 5,
             "sunday": 6,
         }
+        weekday_deltas = []
         for weekday_name, weekday_index in weekday_map.items():
             if weekday_name in lowered:
                 current_weekday = now.weekday()
                 diff = (weekday_index - current_weekday) % 7
-                return diff
+                weekday_deltas.append(diff)
+        if weekday_deltas:
+            return min(weekday_deltas)
 
         return None
 
