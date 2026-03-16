@@ -248,6 +248,7 @@ class AmazonDeliveryClient:
         buybox_region = cls._extract_buybox_delivery_region(html_text)
         flat_text = cls._strip_html(buybox_region) if buybox_region else cls._strip_html(html_text)
         phrase_patterns = [
+            r"(?:or\s+)?fastest\s+delivery[^.!\n]{0,200}",
             r"(?:free\s+)?delivery[^.!\n]{0,160}",
             r"get it[^.!\n]{0,160}",
             r"arrives[^.!\n]{0,160}",
@@ -255,12 +256,17 @@ class AmazonDeliveryClient:
             r"ships in[^.!\n]{0,160}",
         ]
         fallback_candidates = []
+        seen_candidates = set()
         for pattern in phrase_patterns:
-            match = re.search(pattern, flat_text, flags=re.IGNORECASE)
-            if match:
+            for match in re.finditer(pattern, flat_text, flags=re.IGNORECASE):
                 candidate = re.sub(r"\s+", " ", match.group(0)).strip(" -:|")
-                if cls._is_valid_delivery_candidate(candidate):
-                    fallback_candidates.append(candidate)
+                if not cls._is_valid_delivery_candidate(candidate):
+                    continue
+                candidate_key = candidate.lower()
+                if candidate_key in seen_candidates:
+                    continue
+                seen_candidates.add(candidate_key)
+                fallback_candidates.append(candidate)
 
         if fallback_candidates:
             return cls._select_best_delivery_candidate(fallback_candidates)
@@ -272,12 +278,15 @@ class AmazonDeliveryClient:
         """
         Parse delivery message spans with explicit delivery-time metadata.
         """
+        buybox_region = cls._extract_buybox_delivery_region(html_text)
+        source_html = buybox_region if buybox_region else html_text
+
         span_pattern = re.compile(
             r"<span[^>]*data-csa-c-delivery-time=\"([^\"]+)\"[^>]*>(.*?)</span>",
             flags=re.IGNORECASE | re.DOTALL,
         )
         candidates = []
-        for match in span_pattern.finditer(html_text):
+        for match in span_pattern.finditer(source_html):
             delivery_time = cls._strip_html(match.group(1))
             raw_text = cls._strip_html(match.group(2))
             if not delivery_time:
@@ -303,14 +312,20 @@ class AmazonDeliveryClient:
         """
         Narrow fallback search to delivery block areas to avoid Join Prime content.
         """
-        region_patterns = [
-            r'(<div[^>]+id="deliveryBlockMessage"[^>]*>.*?</div>)',
-            r'(<div[^>]+id="mir-layout-DELIVERY_BLOCK"[^>]*>.*?</div>)',
-        ]
-        for pattern in region_patterns:
-            match = re.search(pattern, html_text, flags=re.IGNORECASE | re.DOTALL)
-            if match:
-                return match.group(1)
+        if not html_text:
+            return None
+
+        lower_html = html_text.lower()
+        start_markers = ['id="deliveryblockmessage"', 'id="mir-layout-delivery_block"']
+        for marker in start_markers:
+            start_index = lower_html.find(marker)
+            if start_index == -1:
+                continue
+
+            # Use a bounded window instead of regex tag balancing.
+            # This reliably includes primary + secondary delivery lines.
+            end_index = min(len(html_text), start_index + 30000)
+            return html_text[start_index:end_index]
         return None
 
     @classmethod
@@ -320,20 +335,41 @@ class AmazonDeliveryClient:
         """
         scored = []
         for candidate in candidates:
-            if not cls._is_valid_delivery_candidate(candidate):
+            normalized_candidate = cls._normalize_delivery_candidate_text(candidate)
+            if not cls._is_valid_delivery_candidate(normalized_candidate):
                 continue
-            days = cls.estimate_delivery_days(candidate)
-            lower = candidate.lower()
-            prime_bonus = -1 if "prime" in lower else 0
+            days = cls.estimate_delivery_days(normalized_candidate)
+            lower = normalized_candidate.lower()
+            # If Amazon explicitly labels a line as "fastest delivery",
+            # that should be preferred over standard delivery lines.
+            fastest_rank = 0 if "fastest delivery" in lower else 1
+            prime_rank = 0 if "prime" in lower else 1
+
             # Unknown days are worst; otherwise pick smallest day value.
             effective_days = days if isinstance(days, int) else 9999
-            scored.append((effective_days, prime_bonus, len(candidate), candidate))
+            scored.append((fastest_rank, effective_days, prime_rank, len(normalized_candidate), normalized_candidate))
 
         if not scored:
             return None
 
-        scored.sort(key=lambda item: (item[0], item[1], item[2]))
-        return scored[0][3]
+        scored.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+        return scored[0][4]
+
+    @staticmethod
+    def _normalize_delivery_candidate_text(candidate):
+        """
+        Keep the most relevant delivery clause (especially fastest-delivery segment).
+        """
+        text = re.sub(r"\s+", " ", (candidate or "").strip())
+        lower = text.lower()
+        fastest_index = lower.find("fastest delivery")
+        if fastest_index > 0:
+            # Include leading "Or " when present for readability.
+            start_index = lower.rfind("or ", 0, fastest_index + 1)
+            if start_index == -1 or (fastest_index - start_index) > 6:
+                start_index = fastest_index
+            text = text[start_index:].strip(" .")
+        return text
 
     @classmethod
     def _is_valid_delivery_candidate(cls, text):
@@ -370,6 +406,13 @@ class AmazonDeliveryClient:
         now = now or datetime.now()
         text = delivery_text.strip()
         lowered = text.lower()
+
+        # If a combined sentence contains both regular and fastest delivery text,
+        # parse the fastest segment to avoid using slower date mentions.
+        fastest_index = lowered.find("fastest delivery")
+        if fastest_index > 0:
+            text = text[fastest_index:]
+            lowered = text.lower()
 
         if "today" in lowered:
             return 0
