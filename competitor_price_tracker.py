@@ -613,9 +613,10 @@ class CompetitorPriceTracker:
         if errors:
             preview = "\n".join(errors[:5])
             extra = f"\n...and {len(errors) - 5} more." if len(errors) > 5 else ""
+            warning_body = "\n".join(summary_lines)
             messagebox.showwarning(
                 "Tracking Completed with Warnings",
-                f"{chr(10).join(summary_lines)}\n\nErrors:\n{preview}{extra}",
+                f"{warning_body}\n\nErrors:\n{preview}{extra}",
                 parent=self.window,
             )
         else:
