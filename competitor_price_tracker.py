@@ -6,8 +6,9 @@ Tracks current prices for ASIN lists, stores snapshots in SQLite, and visualizes
 import sqlite3
 from datetime import datetime
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import filedialog, ttk, messagebox
 
+import pandas as pd
 import requests
 
 from asin_manager import load_all_asin_lists
@@ -135,6 +136,58 @@ class PriceHistoryStore:
             }
             for row in rows
         ]
+
+    def get_price_history_rows(self, list_name=None, asin=None):
+        """
+        Return normalized rows for CSV export and pivot-table analysis.
+        """
+        query = (
+            "SELECT id, list_name, asin, title, price, currency, tracked_at "
+            "FROM price_logs"
+        )
+        clauses = []
+        params = []
+        if list_name:
+            clauses.append("list_name = ?")
+            params.append(list_name)
+        if asin:
+            clauses.append("asin = ?")
+            params.append(asin)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY tracked_at ASC, id ASC"
+
+        with self._connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+        export_rows = []
+        for row in rows:
+            tracked_at = row[6]
+            tracked_date = ""
+            tracked_hour = ""
+            try:
+                dt = datetime.strptime(tracked_at, "%Y-%m-%d %H:%M:%S")
+                tracked_date = dt.strftime("%Y-%m-%d")
+                tracked_hour = dt.strftime("%H:00")
+            except (TypeError, ValueError):
+                pass
+
+            export_rows.append(
+                {
+                    "record_id": row[0],
+                    "list_name": row[1],
+                    "asin": row[2],
+                    "title": row[3],
+                    "price": float(row[4]) if row[4] is not None else None,
+                    "currency": row[5],
+                    "tracked_at": tracked_at,
+                    "tracked_date": tracked_date,
+                    "tracked_hour": tracked_hour,
+                }
+            )
+        return export_rows
 
 
 class KeepaPriceClient:
@@ -334,6 +387,18 @@ class CompetitorPriceTracker:
             command=self._track_prices_for_all_lists,
         ).pack(side=tk.LEFT)
 
+        ttk.Button(
+            controls,
+            text="Export All Price History",
+            command=self._export_all_price_history,
+        ).pack(side=tk.RIGHT)
+
+        ttk.Button(
+            controls,
+            text="Export Selected ASIN History",
+            command=self._export_selected_asin_history,
+        ).pack(side=tk.RIGHT, padx=(0, 8))
+
         self.status_var = tk.StringVar(
             value="Select lists in Batch Tracking and click Track. Use View List to inspect history."
         )
@@ -455,6 +520,58 @@ class CompetitorPriceTracker:
             self.history_tree.delete(item)
         self.chart_canvas.delete("all")
         self.chart_canvas.create_text(20, 20, text="Select an ASIN to view chart and dated history.", anchor=tk.NW, fill="#555555")
+
+    def _export_history_rows(self, rows, default_filename):
+        if not rows:
+            messagebox.showinfo(
+                "No Data",
+                "No historical rows were found for export.",
+                parent=self.window,
+            )
+            return
+
+        save_path = filedialog.asksaveasfilename(
+            title="Export price history",
+            defaultextension=".csv",
+            initialfile=default_filename,
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            parent=self.window,
+        )
+        if not save_path:
+            return
+
+        pd.DataFrame(rows).to_csv(save_path, index=False)
+        messagebox.showinfo(
+            "Export Complete",
+            f"Saved {len(rows)} historical rows to:\n{save_path}",
+            parent=self.window,
+        )
+
+    def _export_all_price_history(self):
+        rows = self.store.get_price_history_rows()
+        self._export_history_rows(rows, default_filename="price_history_all_records.csv")
+
+    def _export_selected_asin_history(self):
+        selected_list = self.list_var.get().strip()
+        if not selected_list:
+            messagebox.showwarning(
+                "No List Selected",
+                "Choose a View List first.",
+                parent=self.window,
+            )
+            return
+
+        if not self.selected_asin:
+            messagebox.showwarning(
+                "No ASIN Selected",
+                "Select an ASIN row first, then export selected ASIN history.",
+                parent=self.window,
+            )
+            return
+
+        rows = self.store.get_price_history_rows(list_name=selected_list, asin=self.selected_asin)
+        filename = f"price_history_{selected_list}_{self.selected_asin}.csv".replace(" ", "_")
+        self._export_history_rows(rows, default_filename=filename)
 
     def _refresh_latest_for_selected_list(self):
         selected_list = self.list_var.get().strip()
