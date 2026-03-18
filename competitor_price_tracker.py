@@ -213,6 +213,7 @@ class CompetitorPriceTracker:
 
         self.window = None
         self.list_var = None
+        self.batch_listbox = None
         self.status_var = None
         self.results_tree = None
         self.history_tree = None
@@ -262,7 +263,7 @@ class CompetitorPriceTracker:
         controls = ttk.Frame(container)
         controls.pack(fill=tk.X, pady=(0, 10))
 
-        ttk.Label(controls, text="ASIN List:").pack(side=tk.LEFT)
+        ttk.Label(controls, text="View List:").pack(side=tk.LEFT)
         self.list_var = tk.StringVar()
         self.list_combo = ttk.Combobox(
             controls,
@@ -279,14 +280,63 @@ class CompetitorPriceTracker:
             command=self._refresh_list_choices,
         ).pack(side=tk.LEFT, padx=(0, 8))
 
+        batch_frame = ttk.LabelFrame(container, text="Batch Tracking", padding="8")
+        batch_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(
+            batch_frame,
+            text="Select one or more lists to track (Ctrl/Cmd-click for multiple):",
+        ).pack(anchor=tk.W)
+
+        batch_listbox_frame = ttk.Frame(batch_frame)
+        batch_listbox_frame.pack(fill=tk.X, pady=(4, 6))
+
+        self.batch_listbox = tk.Listbox(
+            batch_listbox_frame,
+            selectmode=tk.EXTENDED,
+            height=6,
+            exportselection=False,
+        )
+        batch_scrollbar = ttk.Scrollbar(
+            batch_listbox_frame,
+            orient=tk.VERTICAL,
+            command=self.batch_listbox.yview,
+        )
+        self.batch_listbox.configure(yscrollcommand=batch_scrollbar.set)
+        self.batch_listbox.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        batch_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        batch_buttons = ttk.Frame(batch_frame)
+        batch_buttons.pack(fill=tk.X)
+
         ttk.Button(
-            controls,
-            text="Track Prices Now",
-            command=self._track_prices_for_selected_list,
+            batch_buttons,
+            text="Select All",
+            command=self._select_all_batch_lists,
+        ).pack(side=tk.LEFT, padx=(0, 6))
+
+        ttk.Button(
+            batch_buttons,
+            text="Clear",
+            command=self._clear_batch_selection,
+        ).pack(side=tk.LEFT, padx=(0, 10))
+
+        ttk.Button(
+            batch_buttons,
+            text="Track Selected Lists",
+            command=self._track_prices_for_selected_lists,
             style="Accent.TButton",
+        ).pack(side=tk.LEFT, padx=(0, 6))
+
+        ttk.Button(
+            batch_buttons,
+            text="Track All Lists",
+            command=self._track_prices_for_all_lists,
         ).pack(side=tk.LEFT)
 
-        self.status_var = tk.StringVar(value="Select an ASIN list, then click 'Track Prices Now'.")
+        self.status_var = tk.StringVar(
+            value="Select lists in Batch Tracking and click Track. Use View List to inspect history."
+        )
         ttk.Label(container, textvariable=self.status_var, foreground="gray").pack(anchor=tk.W, pady=(0, 10))
 
         results_frame = ttk.LabelFrame(
@@ -351,6 +401,7 @@ class CompetitorPriceTracker:
         lists_data = load_all_asin_lists()
         list_names = sorted(lists_data.keys())
         self.list_combo["values"] = list_names
+        self._populate_batch_listbox(list_names)
 
         if not list_names:
             self.list_var.set("")
@@ -362,6 +413,38 @@ class CompetitorPriceTracker:
         if self.list_var.get() not in list_names:
             self.list_var.set(list_names[0])
         self._refresh_latest_for_selected_list()
+
+    def _populate_batch_listbox(self, list_names):
+        if self.batch_listbox is None:
+            return
+
+        selected_names = set(self._get_selected_batch_lists())
+        self.batch_listbox.delete(0, tk.END)
+        for list_name in list_names:
+            self.batch_listbox.insert(tk.END, list_name)
+
+        if selected_names:
+            for idx, list_name in enumerate(list_names):
+                if list_name in selected_names:
+                    self.batch_listbox.selection_set(idx)
+        elif self.list_var and self.list_var.get() in list_names:
+            selected_index = list_names.index(self.list_var.get())
+            self.batch_listbox.selection_set(selected_index)
+
+    def _get_selected_batch_lists(self):
+        if self.batch_listbox is None:
+            return []
+        return [self.batch_listbox.get(i) for i in self.batch_listbox.curselection()]
+
+    def _select_all_batch_lists(self):
+        if self.batch_listbox is None or self.batch_listbox.size() == 0:
+            return
+        self.batch_listbox.selection_set(0, tk.END)
+
+    def _clear_batch_selection(self):
+        if self.batch_listbox is None:
+            return
+        self.batch_listbox.selection_clear(0, tk.END)
 
     def _clear_results_table(self):
         for item in self.results_tree.get_children():
@@ -428,57 +511,124 @@ class CompetitorPriceTracker:
             f"Loaded {len(asins)} ASINs from list '{selected_list}'. Select a row to view history chart."
         )
 
-    def _track_prices_for_selected_list(self):
-        selected_list = self.list_var.get().strip()
-        if not selected_list:
-            messagebox.showwarning("No List Selected", "Please select an ASIN list first.", parent=self.window)
+    def _track_prices_for_selected_lists(self):
+        selected_lists = self._get_selected_batch_lists()
+        if not selected_lists:
+            messagebox.showwarning(
+                "No Lists Selected",
+                "Select one or more lists in Batch Tracking first.",
+                parent=self.window,
+            )
+            return
+        self._track_prices_for_lists(selected_lists)
+
+    def _track_prices_for_all_lists(self):
+        list_names = list(self.list_combo["values"])
+        if not list_names:
+            messagebox.showwarning(
+                "No Lists Found",
+                "No ASIN lists found. Use ASIN Manager to create or populate a list.",
+                parent=self.window,
+            )
             return
 
         lists_data = load_all_asin_lists()
-        asins = lists_data.get(selected_list, {}).get("asins", [])
-        if not asins:
+        total_asins = sum(len(lists_data.get(list_name, {}).get("asins", [])) for list_name in list_names)
+        if total_asins == 0:
             messagebox.showwarning(
-                "Empty List",
-                f"List '{selected_list}' has no ASINs. Add ASINs in ASIN Manager first.",
+                "No ASINs Found",
+                "All lists are empty. Add ASINs in ASIN Manager first.",
+                parent=self.window,
+            )
+            return
+
+        should_track = messagebox.askyesno(
+            "Track All Lists",
+            f"Track prices for all {len(list_names)} list(s) containing {total_asins} ASIN(s)?",
+            parent=self.window,
+        )
+        if not should_track:
+            return
+
+        self._track_prices_for_lists(list_names)
+
+    def _track_prices_for_lists(self, list_names):
+        lists_data = load_all_asin_lists()
+        unique_list_names = []
+        seen_names = set()
+        for list_name in list_names:
+            if list_name not in seen_names:
+                seen_names.add(list_name)
+                unique_list_names.append(list_name)
+
+        target_lists = []
+        empty_lists = []
+        for list_name in unique_list_names:
+            asins = lists_data.get(list_name, {}).get("asins", [])
+            if asins:
+                target_lists.append((list_name, asins))
+            else:
+                empty_lists.append(list_name)
+
+        if not target_lists:
+            messagebox.showwarning(
+                "No ASINs Found",
+                "None of the selected lists contain ASINs. Add ASINs in ASIN Manager first.",
                 parent=self.window,
             )
             return
 
         tracked_count = 0
         errors = []
-        total = len(asins)
+        total_asins = sum(len(asins) for _, asins in target_lists)
+        progress_index = 0
 
-        for index, asin in enumerate(asins, start=1):
-            self.status_var.set(f"Tracking {index}/{total}: {asin}")
-            self.window.update_idletasks()
+        for list_position, (list_name, asins) in enumerate(target_lists, start=1):
+            for asin in asins:
+                progress_index += 1
+                self.status_var.set(
+                    f"Tracking {progress_index}/{total_asins} | "
+                    f"List {list_position}/{len(target_lists)} '{list_name}' | {asin}"
+                )
+                self.window.update_idletasks()
 
-            price, title, error = self.keepa_client.fetch_current_price(asin)
-            if error:
-                errors.append(f"{asin}: {error}")
-                continue
+                price, title, error = self.keepa_client.fetch_current_price(asin)
+                if error:
+                    errors.append(f"[{list_name}] {asin}: {error}")
+                    continue
 
-            self.store.log_price(selected_list, asin, title, price)
-            tracked_count += 1
+                self.store.log_price(list_name, asin, title, price)
+                tracked_count += 1
 
         self._refresh_latest_for_selected_list()
+
+        summary_lines = [
+            f"Tracked {tracked_count} ASIN(s) across {len(target_lists)} list(s)."
+        ]
+        if empty_lists:
+            empty_preview = ", ".join(empty_lists[:5])
+            extra = f" (+{len(empty_lists) - 5} more)" if len(empty_lists) > 5 else ""
+            summary_lines.append(f"Skipped empty list(s): {empty_preview}{extra}")
 
         if errors:
             preview = "\n".join(errors[:5])
             extra = f"\n...and {len(errors) - 5} more." if len(errors) > 5 else ""
+            warning_body = "\n".join(summary_lines)
             messagebox.showwarning(
                 "Tracking Completed with Warnings",
-                f"Tracked {tracked_count} ASIN(s) successfully.\n\nErrors:\n{preview}{extra}",
+                f"{warning_body}\n\nErrors:\n{preview}{extra}",
                 parent=self.window,
             )
         else:
             messagebox.showinfo(
                 "Tracking Complete",
-                f"Tracked {tracked_count} ASIN(s) successfully.",
+                "\n".join(summary_lines),
                 parent=self.window,
             )
 
         self.status_var.set(
-            f"Tracking finished for list '{selected_list}'. Rows with price drops are highlighted in green."
+            f"Tracking finished for {len(target_lists)} list(s). "
+            "Rows with price drops are highlighted in green in the selected View List."
         )
 
     def _on_asin_selected(self, _event):
