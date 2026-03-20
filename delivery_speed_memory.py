@@ -181,3 +181,106 @@ class DeliverySpeedMemoryStore:
             "last_checked_at": row[2],
         }
 
+    def get_distinct_asins(self):
+        """
+        Return sorted ASINs with at least one stored delivery check.
+        """
+        with self._connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT DISTINCT asin
+                FROM delivery_speed_checks
+                WHERE asin IS NOT NULL AND asin != ''
+                ORDER BY asin ASC
+                """
+            )
+            rows = cursor.fetchall()
+        return [row[0] for row in rows]
+
+    def get_distinct_zip_codes(self, asin=None):
+        """
+        Return sorted ZIP codes, optionally filtered by ASIN.
+        """
+        query = (
+            "SELECT DISTINCT zip_code FROM delivery_speed_checks "
+            "WHERE zip_code IS NOT NULL AND zip_code != ''"
+        )
+        params = []
+        if asin:
+            query += " AND asin = ?"
+            params.append(asin)
+        query += " ORDER BY zip_code ASC"
+
+        with self._connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+        return [row[0] for row in rows]
+
+    def get_history_rows(self, asin=None, zip_code=None, status=None, limit=None):
+        """
+        Return normalized delivery history rows for charting and CSV exports.
+        """
+        query = (
+            "SELECT id, checked_at, asin, zip_code, estimated_days, status, threshold_days, "
+            "is_pass, review_reason, delivery_text, zip_verified, displayed_zip, error "
+            "FROM delivery_speed_checks"
+        )
+        clauses = []
+        params = []
+        if asin:
+            clauses.append("asin = ?")
+            params.append(asin)
+        if zip_code:
+            clauses.append("zip_code = ?")
+            params.append(zip_code)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY checked_at ASC, id ASC"
+        if isinstance(limit, int) and limit > 0:
+            query += " LIMIT ?"
+            params.append(limit)
+
+        with self._connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+        export_rows = []
+        for row in rows:
+            checked_at = row[1]
+            checked_date = ""
+            checked_hour = ""
+            try:
+                dt = datetime.strptime(checked_at, "%Y-%m-%d %H:%M:%S")
+                checked_date = dt.strftime("%Y-%m-%d")
+                checked_hour = dt.strftime("%H:00")
+            except (TypeError, ValueError):
+                pass
+
+            export_rows.append(
+                {
+                    "record_id": row[0],
+                    "checked_at": checked_at,
+                    "checked_date": checked_date,
+                    "checked_hour": checked_hour,
+                    "asin": row[2],
+                    "zip_code": row[3],
+                    "estimated_days": row[4],
+                    "status": row[5],
+                    "threshold_days": row[6],
+                    "is_pass": bool(row[7]),
+                    "review": "PASS" if row[7] else "FAIL",
+                    "review_reason": row[8],
+                    "delivery_text": row[9],
+                    "zip_verified": bool(row[10]),
+                    "displayed_zip": row[11],
+                    "error": row[12],
+                }
+            )
+        return export_rows
+

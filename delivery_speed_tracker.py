@@ -603,6 +603,9 @@ class DeliverySpeedTracker:
     Tkinter flow to gather ASIN/ZIP inputs and display delivery speed matrix.
     """
 
+    def __init__(self):
+        self.memory_store = DeliverySpeedMemoryStore()
+
     def get_user_input(self, parent_window=None):
         root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
         root.title("Delivery Speed by ZIP - Input")
@@ -958,12 +961,17 @@ class DeliverySpeedTracker:
         ttk.Label(settings_grid, text="Optional Proxy URL:").grid(row=3, column=0, sticky=tk.W, padx=(0, 6), pady=4)
         ttk.Entry(settings_grid, textvariable=proxy_var).grid(row=3, column=1, columnspan=3, sticky=(tk.W, tk.E), pady=4)
 
-        ttk.Checkbutton(main_frame, text="Export results to CSV", variable=export_var).pack(anchor=tk.W, pady=(0, 12))
+        ttk.Checkbutton(main_frame, text="Export current run results to CSV", variable=export_var).pack(anchor=tk.W, pady=(0, 12))
 
         action_frame = ttk.Frame(main_frame)
         action_frame.pack(fill=tk.X)
         ttk.Button(action_frame, text="Run", command=submit, style="Accent.TButton").pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(action_frame, text="Cancel", command=cancel).pack(side=tk.LEFT)
+        ttk.Button(
+            action_frame,
+            text="View History",
+            command=lambda: self.open_history_viewer(parent_window=root),
+        ).pack(side=tk.LEFT, padx=(8, 0))
 
         # Keyboard shortcuts make submission accessible on smaller displays.
         root.bind("<Return>", lambda _e: submit())
@@ -975,6 +983,466 @@ class DeliverySpeedTracker:
             root.wait_window()
 
         return result_var[0]
+
+    def _export_history_rows_to_csv(self, rows, parent_window, default_filename):
+        if not rows:
+            messagebox.showinfo(
+                "No Data",
+                "No historical rows were found for export.",
+                parent=parent_window,
+            )
+            return
+
+        save_path = filedialog.asksaveasfilename(
+            title="Save delivery speed history",
+            defaultextension=".csv",
+            initialfile=default_filename,
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            parent=parent_window,
+        )
+        if not save_path:
+            return
+
+        pd.DataFrame(rows).to_csv(save_path, index=False)
+        messagebox.showinfo(
+            "Export Complete",
+            f"Saved {len(rows)} historical rows to:\n{save_path}",
+            parent=parent_window,
+        )
+
+    def export_delivery_history(
+        self,
+        parent_window=None,
+        asin=None,
+        zip_code=None,
+        status=None,
+        default_filename="delivery_speed_history_all_records.csv",
+    ):
+        rows = self.memory_store.get_history_rows(
+            asin=asin,
+            zip_code=zip_code,
+            status=status,
+            limit=None,
+        )
+        self._export_history_rows_to_csv(rows, parent_window=parent_window, default_filename=default_filename)
+
+    def _draw_delivery_history_chart(self, canvas, rows, asin_filter, zip_filter):
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 760)
+        height = max(canvas.winfo_height(), 260)
+
+        header = f"Delivery Days History | ASIN: {asin_filter or 'All'} | ZIP: {zip_filter or 'All'}"
+        canvas.create_text(14, 10, text=header, anchor=tk.NW, fill="#222222", font=("Arial", 10, "bold"))
+
+        chart_rows = []
+        for row in rows:
+            if row.get("status") != "ok":
+                continue
+            if row.get("estimated_days") is None:
+                continue
+            try:
+                checked_time = datetime.strptime(row["checked_at"], "%Y-%m-%d %H:%M:%S").timestamp()
+                days_value = float(row["estimated_days"])
+            except (TypeError, ValueError):
+                continue
+            chart_rows.append((checked_time, days_value, row["checked_at"]))
+
+        if not chart_rows:
+            canvas.create_text(
+                20,
+                40,
+                text="No chartable rows in current filter (requires status=ok with estimated days).",
+                anchor=tk.NW,
+                fill="#555555",
+            )
+            return
+
+        left_margin = 70
+        right_margin = 20
+        top_margin = 35
+        bottom_margin = 65
+        plot_width = width - left_margin - right_margin
+        plot_height = height - top_margin - bottom_margin
+
+        time_points = [row[0] for row in chart_rows]
+        day_values = [row[1] for row in chart_rows]
+
+        min_days = min(day_values)
+        max_days = max(day_values)
+        if min_days == max_days:
+            min_days -= 1
+            max_days += 1
+
+        min_time = min(time_points)
+        max_time = max(time_points)
+        if min_time == max_time:
+            max_time += 1
+
+        def map_x(timestamp_value):
+            ratio = (timestamp_value - min_time) / (max_time - min_time)
+            return left_margin + (ratio * plot_width)
+
+        def map_y(day_value):
+            ratio = (day_value - min_days) / (max_days - min_days)
+            return top_margin + ((1 - ratio) * plot_height)
+
+        canvas.create_line(left_margin, top_margin, left_margin, top_margin + plot_height, fill="#666666")
+        canvas.create_line(
+            left_margin,
+            top_margin + plot_height,
+            left_margin + plot_width,
+            top_margin + plot_height,
+            fill="#666666",
+        )
+
+        y_tick_count = 4
+        for i in range(y_tick_count + 1):
+            ratio = i / y_tick_count
+            day_tick = max_days - (ratio * (max_days - min_days))
+            y = top_margin + (ratio * plot_height)
+            canvas.create_line(left_margin - 5, y, left_margin, y, fill="#666666")
+            canvas.create_text(
+                left_margin - 8,
+                y,
+                text=f"{day_tick:.1f}",
+                anchor=tk.E,
+                fill="#444444",
+                font=("Arial", 8),
+            )
+
+        x_tick_indices = sorted(set([0, len(chart_rows) // 2, len(chart_rows) - 1]))
+        for idx in x_tick_indices:
+            x = map_x(chart_rows[idx][0])
+            label = datetime.strptime(chart_rows[idx][2], "%Y-%m-%d %H:%M:%S").strftime("%m-%d %H:%M")
+            canvas.create_line(x, top_margin + plot_height, x, top_margin + plot_height + 5, fill="#666666")
+            canvas.create_text(
+                x,
+                top_margin + plot_height + 18,
+                text=label,
+                anchor=tk.N,
+                fill="#444444",
+                font=("Arial", 8),
+            )
+
+        points = []
+        for timestamp_value, day_value, _checked_at in chart_rows:
+            x = map_x(timestamp_value)
+            y = map_y(day_value)
+            points.extend([x, y])
+
+        if len(points) >= 4:
+            canvas.create_line(*points, fill="#1F77B4", width=2, smooth=True)
+        for i in range(0, len(points), 2):
+            x_coord = points[i]
+            y_coord = points[i + 1]
+            canvas.create_oval(
+                x_coord - 2.5,
+                y_coord - 2.5,
+                x_coord + 2.5,
+                y_coord + 2.5,
+                fill="#1F77B4",
+                outline="#1F77B4",
+            )
+
+    def open_history_viewer(self, parent_window=None, preselected_asin=None, preselected_zip=None):
+        history_root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
+        history_root.title("Delivery Speed History Explorer")
+        history_root.resizable(True, True)
+        history_root.minsize(1220, 820)
+
+        history_root.update_idletasks()
+        screen_width = history_root.winfo_screenwidth()
+        screen_height = history_root.winfo_screenheight()
+        width = min(int(screen_width * 0.95), 1500)
+        height = min(int(screen_height * 0.92), 980)
+        x = (screen_width - width) // 2
+        y = (screen_height - height) // 2
+        history_root.geometry(f"{width}x{height}+{x}+{y}")
+
+        history_root.lift()
+        history_root.attributes("-topmost", True)
+        history_root.after_idle(lambda: history_root.attributes("-topmost", False))
+
+        asins = self.memory_store.get_distinct_asins()
+        if not asins:
+            messagebox.showinfo(
+                "No History Available",
+                "No delivery speed history found in the database yet.",
+                parent=history_root,
+            )
+            history_root.destroy()
+            return
+
+        container = ttk.Frame(history_root, padding="12")
+        container.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(container, text="Delivery Speed History Explorer", font=("Arial", 16, "bold")).pack(anchor=tk.W, pady=(0, 10))
+
+        controls = ttk.Frame(container)
+        controls.pack(fill=tk.X, pady=(0, 8))
+
+        asin_var = tk.StringVar(value="All ASINs")
+        zip_var = tk.StringVar(value="All ZIPs")
+        status_var = tk.StringVar(value="All Statuses")
+        limit_var = tk.StringVar(value="2000")
+
+        ttk.Label(controls, text="ASIN:").pack(side=tk.LEFT)
+        asin_combo = ttk.Combobox(
+            controls,
+            textvariable=asin_var,
+            state="readonly",
+            width=20,
+            values=["All ASINs"] + asins,
+        )
+        asin_combo.pack(side=tk.LEFT, padx=(6, 10))
+        if preselected_asin and preselected_asin in asins:
+            asin_var.set(preselected_asin)
+
+        ttk.Label(controls, text="ZIP:").pack(side=tk.LEFT)
+        zip_combo = ttk.Combobox(
+            controls,
+            textvariable=zip_var,
+            state="readonly",
+            width=12,
+            values=["All ZIPs"],
+        )
+        zip_combo.pack(side=tk.LEFT, padx=(6, 10))
+
+        ttk.Label(controls, text="Status:").pack(side=tk.LEFT)
+        status_combo = ttk.Combobox(
+            controls,
+            textvariable=status_var,
+            state="readonly",
+            width=14,
+            values=["All Statuses", "ok", "captcha", "not_found", "error"],
+        )
+        status_combo.pack(side=tk.LEFT, padx=(6, 10))
+
+        ttk.Label(controls, text="Row limit:").pack(side=tk.LEFT)
+        ttk.Entry(controls, textvariable=limit_var, width=8).pack(side=tk.LEFT, padx=(6, 12))
+
+        summary_var = tk.StringVar(value="")
+        ttk.Label(container, textvariable=summary_var, foreground="gray").pack(anchor=tk.W, pady=(0, 8))
+
+        chart_canvas = tk.Canvas(container, bg="white", height=260, highlightthickness=1, highlightbackground="#D9D9D9")
+        chart_canvas.pack(fill=tk.X, expand=False, pady=(0, 10))
+
+        columns = (
+            "checked_at",
+            "asin",
+            "zip_code",
+            "estimated_days",
+            "review",
+            "threshold_days",
+            "status",
+            "zip_verified",
+            "displayed_zip",
+            "review_reason",
+        )
+        tree = ttk.Treeview(container, columns=columns, show="headings", height=15)
+        tree.heading("checked_at", text="Checked At")
+        tree.heading("asin", text="ASIN")
+        tree.heading("zip_code", text="ZIP")
+        tree.heading("estimated_days", text="Est. Days")
+        tree.heading("review", text="Review")
+        tree.heading("threshold_days", text="Threshold")
+        tree.heading("status", text="Status")
+        tree.heading("zip_verified", text="ZIP Verified")
+        tree.heading("displayed_zip", text="ZIP on Page")
+        tree.heading("review_reason", text="Review Reason")
+
+        tree.column("checked_at", width=150, anchor=tk.W)
+        tree.column("asin", width=120, anchor=tk.W)
+        tree.column("zip_code", width=90, anchor=tk.W)
+        tree.column("estimated_days", width=90, anchor=tk.CENTER)
+        tree.column("review", width=80, anchor=tk.CENTER)
+        tree.column("threshold_days", width=80, anchor=tk.CENTER)
+        tree.column("status", width=100, anchor=tk.W)
+        tree.column("zip_verified", width=95, anchor=tk.CENTER)
+        tree.column("displayed_zip", width=100, anchor=tk.W)
+        tree.column("review_reason", width=380, anchor=tk.W)
+
+        tree_scrollbar_y = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
+        tree_scrollbar_x = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=tree.xview)
+        tree.configure(yscrollcommand=tree_scrollbar_y.set, xscrollcommand=tree_scrollbar_x.set)
+
+        tree.pack(fill=tk.BOTH, expand=True)
+        tree_scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+        tree_scrollbar_x.pack(fill=tk.X)
+
+        tree.tag_configure("pass", background="#EAF8EA")
+        tree.tag_configure("review_fail", background="#FFF4E5")
+        tree.tag_configure("captcha", background="#FFF4E5")
+        tree.tag_configure("error", background="#FDECEC")
+
+        details_frame = ttk.LabelFrame(container, text="Selected Row Details", padding="8")
+        details_frame.pack(fill=tk.BOTH, expand=False, pady=(10, 0))
+        details_box = scrolledtext.ScrolledText(details_frame, height=7, wrap=tk.WORD)
+        details_box.pack(fill=tk.BOTH, expand=True)
+        details_box.insert(
+            tk.END,
+            "Select a row to inspect full delivery text and notes.",
+        )
+        details_box.config(state=tk.DISABLED)
+
+        current_rows = {"rows": []}
+
+        def parse_limit_value():
+            limit_text = limit_var.get().strip()
+            if not limit_text:
+                return None
+            try:
+                parsed_limit = int(limit_text)
+                if parsed_limit <= 0:
+                    return None
+                return parsed_limit
+            except ValueError:
+                return None
+
+        def selected_filters():
+            asin_filter = asin_var.get().strip()
+            zip_filter = zip_var.get().strip()
+            status_filter = status_var.get().strip()
+            return (
+                None if asin_filter == "All ASINs" else asin_filter,
+                None if zip_filter == "All ZIPs" else zip_filter,
+                None if status_filter == "All Statuses" else status_filter,
+            )
+
+        def refresh_zip_choices():
+            asin_filter, _, _ = selected_filters()
+            current_zip_values = self.memory_store.get_distinct_zip_codes(asin=asin_filter)
+            zip_options = ["All ZIPs"] + current_zip_values
+            previous_zip = zip_var.get().strip()
+            zip_combo["values"] = zip_options
+
+            if preselected_zip and preselected_zip in current_zip_values:
+                zip_var.set(preselected_zip)
+            elif previous_zip in zip_options:
+                zip_var.set(previous_zip)
+            else:
+                zip_var.set("All ZIPs")
+
+        def refresh_view():
+            asin_filter, zip_filter, status_filter = selected_filters()
+            rows = self.memory_store.get_history_rows(
+                asin=asin_filter,
+                zip_code=zip_filter,
+                status=status_filter,
+                limit=parse_limit_value(),
+            )
+            current_rows["rows"] = rows
+
+            for item in tree.get_children():
+                tree.delete(item)
+
+            for row in rows:
+                if row.get("review") == "PASS":
+                    tag = "pass"
+                elif row.get("status") == "captcha":
+                    tag = "captcha"
+                elif row.get("status") == "ok":
+                    tag = "review_fail"
+                else:
+                    tag = "error"
+
+                tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        row.get("checked_at", ""),
+                        row.get("asin", ""),
+                        row.get("zip_code", ""),
+                        row.get("estimated_days", "") if row.get("estimated_days") is not None else "",
+                        row.get("review", ""),
+                        row.get("threshold_days", ""),
+                        row.get("status", ""),
+                        "Yes" if row.get("zip_verified") else "No",
+                        row.get("displayed_zip", "") or "",
+                        row.get("review_reason", ""),
+                    ),
+                    tags=(tag,),
+                )
+
+            summary_var.set(
+                f"Showing {len(rows)} history row(s) | ASIN={asin_filter or 'All'} | ZIP={zip_filter or 'All'} | Status={status_filter or 'All'}"
+            )
+            self._draw_delivery_history_chart(chart_canvas, rows, asin_filter, zip_filter)
+
+        def export_filtered():
+            asin_filter, zip_filter, _status_filter = selected_filters()
+            asin_part = asin_filter if asin_filter else "all_asins"
+            zip_part = zip_filter if zip_filter else "all_zips"
+            filename = f"delivery_speed_history_{asin_part}_{zip_part}.csv".replace(" ", "_")
+            self._export_history_rows_to_csv(current_rows["rows"], parent_window=history_root, default_filename=filename)
+
+        def on_select(_event):
+            selection = tree.selection()
+            if not selection:
+                return
+            values = tree.item(selection[0], "values")
+            checked_at = values[0]
+            asin = values[1]
+            zip_code = values[2]
+            matched_row = next(
+                (
+                    row for row in current_rows["rows"]
+                    if row.get("checked_at") == checked_at
+                    and row.get("asin") == asin
+                    and row.get("zip_code") == zip_code
+                ),
+                None,
+            )
+            if not matched_row:
+                return
+
+            details_box.config(state=tk.NORMAL)
+            details_box.delete("1.0", tk.END)
+            details_box.insert(
+                tk.END,
+                (
+                    f"Checked at: {matched_row.get('checked_at', '')}\n"
+                    f"ASIN: {matched_row.get('asin', '')}\n"
+                    f"ZIP requested: {matched_row.get('zip_code', '')}\n"
+                    f"Estimated days: {matched_row.get('estimated_days', '')}\n"
+                    f"Review: {matched_row.get('review', '')} | Threshold: {matched_row.get('threshold_days', '')}\n"
+                    f"Status: {matched_row.get('status', '')}\n"
+                    f"ZIP verified on page: {'Yes' if matched_row.get('zip_verified') else 'No'} (page showed: {matched_row.get('displayed_zip', '') or 'N/A'})\n"
+                    f"Reason: {matched_row.get('review_reason', '')}\n\n"
+                    f"Delivery message:\n{matched_row.get('delivery_text', '') or 'N/A'}\n\n"
+                    f"Error / Notes:\n{matched_row.get('error', '') or 'N/A'}"
+                ),
+            )
+            details_box.config(state=tk.DISABLED)
+
+        actions = ttk.Frame(container)
+        actions.pack(fill=tk.X, pady=(8, 0))
+        ttk.Button(actions, text="Refresh View", command=refresh_view).pack(side=tk.LEFT)
+        ttk.Button(actions, text="Export Filtered CSV", command=export_filtered).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Export Full History CSV",
+            command=lambda: self.export_delivery_history(parent_window=history_root),
+        ).pack(side=tk.LEFT, padx=(8, 0))
+
+        asin_combo.bind("<<ComboboxSelected>>", lambda _event: (refresh_zip_choices(), refresh_view()))
+        zip_combo.bind("<<ComboboxSelected>>", lambda _event: refresh_view())
+        status_combo.bind("<<ComboboxSelected>>", lambda _event: refresh_view())
+        tree.bind("<<TreeviewSelect>>", on_select)
+        chart_canvas.bind("<Configure>", lambda _event: self._draw_delivery_history_chart(
+            chart_canvas,
+            current_rows["rows"],
+            selected_filters()[0],
+            selected_filters()[1],
+        ))
+
+        refresh_zip_choices()
+        refresh_view()
+
+        if not parent_window:
+            history_root.mainloop()
+        else:
+            history_root.wait_window()
 
     def process_and_display_results(self, config, parent_window=None):
         asins = config["asins"]
@@ -988,7 +1456,7 @@ class DeliverySpeedTracker:
             timeout_sec=config["timeout_sec"],
             proxy_url=config["proxy_url"],
         )
-        memory_store = DeliverySpeedMemoryStore()
+        memory_store = self.memory_store
 
         total = len(asins) * len(zips)
         results = []
@@ -1074,6 +1542,25 @@ class DeliverySpeedTracker:
             "or use a trusted proxy/session. Each run is logged with timestamp and pass/fail review."
         )
         ttk.Label(container, text=info_text, foreground="gray").pack(anchor=tk.W, pady=(0, 10))
+
+        history_actions = ttk.Frame(container)
+        history_actions.pack(fill=tk.X, pady=(0, 8))
+        default_asin = asins[0] if len(asins) == 1 else None
+        default_zip = zips[0] if len(zips) == 1 else None
+        ttk.Button(
+            history_actions,
+            text="View Delivery History",
+            command=lambda: self.open_history_viewer(
+                parent_window=result_root,
+                preselected_asin=default_asin,
+                preselected_zip=default_zip,
+            ),
+        ).pack(side=tk.LEFT)
+        ttk.Button(
+            history_actions,
+            text="Export Full History CSV",
+            command=lambda: self.export_delivery_history(parent_window=result_root),
+        ).pack(side=tk.LEFT, padx=(8, 0))
 
         columns = (
             "asin",
