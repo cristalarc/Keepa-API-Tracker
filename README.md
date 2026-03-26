@@ -1,81 +1,72 @@
-# Keepa API Buybox Tracker
+# Keepa API Desktop Tracker
 
-This project provides Python scripts to analyze Amazon product data using the Keepa API. It includes two main tools:
-
-1. **Buybox Tracker** (`buybox_amazon_percent.py`): Analyzes historical buybox ownership
-2. **Sales Rank Analyzer** (`sales_rank_analyzer.py`): Analyzes sales rank trends and statistics
+This project is a comprehensive Python `tkinter` desktop GUI application for Amazon product analytics via the Keepa API. It allows users to track and analyze Buybox ownership percentages, Sales Rank changes, Price histories, and Delivery Speeds.
 
 ## Features
 
-### Buybox Tracker
-- Fetch buybox history for a given ASIN from Keepa
-- Calculate the percentage of buybox held by Amazon for one or multiple months in a selected year
-- Optionally export the full buybox history data to a CSV file
-- Use a graphical interface (popups) to enter ASIN, year, and months, and to select export options
+- **Unified GUI Dashboard**: Launch the tracking suite through `keepa_tracker.py`, giving you tabbed access to all available tools.
+- **Buybox Tracker**: Fetch historical buybox data and calculate the percentage of time Amazon holds the buybox for a given ASIN.
+- **Sales Rank Analyzer**: Analyze sales rank history, including average, median, and extreme drops over a specified period.
+- **Delivery Speed Tracker**: Monitor historic competitor fulfillment and delivery speeds on specific items.
+- **Price Tracking**: Keep tabs on long-term price fluctuations for competing offers.
+- **CSV Exports**: Export the underlying historical data to local CSV files for further analysis.
 
-### Sales Rank Analyzer
-- Fetch and analyze sales rank history for any ASIN
-- Calculate statistics for the last N days (default: 30 days)
-- Provides average, minimum, and maximum sales rank
-- Tracks number of rank changes and data points
-- Shows recent rank history
-- Optional CSV export of full sales rank history
+## Prerequisites & Installation
 
-## Requirements
-- Python 3.7+
-- requests
-- python-dotenv
-- pandas
-- tkinter (included with standard Python)
+The tracker requires Python 3.7+ and relies on system-level GUI libraries (Tkinter).
 
-Install dependencies:
+### 1. System Dependencies
+
+**Linux / Ubuntu / Debian:**
+You must install the system python-tk package for the GUI to render.
+```bash
+sudo apt-get update
+sudo apt-get install python3-tk
 ```
+*(If running on a headless server or VM without a display, you must run it inside an `Xvfb` session, e.g., `DISPLAY=:1 python3 keepa_tracker.py`).*
+
+**Windows / macOS:**
+Tkinter is generally included with standard Python installations.
+
+### 2. Python Packages
+
+Install all necessary Python dependencies via `pip`:
+```bash
 pip install -r requirements.txt
 ```
+*(Packages include: `requests`, `python-dotenv`, `pandas`, `pyautogui`, `screeninfo`, `pytz`)*
+
+## Configuration
+
+You must have an active Keepa API Key to fetch data. The application expects this in a `.env.local` file at the root of the project.
+
+Create a file named `.env.local` and add your API key:
+```env
+Keepa_API_KEY=YOUR_KEEPA_API_KEY_HERE
+```
+> **Note:** If this file or key is missing, the application will exit immediately upon launch.
 
 ## Usage
 
-### Buybox Analysis
-1. Add your Keepa API key to a `.env.local` file:
-   ```
-   Keepa_API_KEY=YOUR_KEEPA_API_KEY
-   ```
-2. Run the buybox tracker:
-   ```
-   python buybox_amazon_percent.py
-   ```
-3. Enter the ASIN, year, and months when prompted.
-4. View results in the terminal. Optionally export the data to CSV.
+Simply run the main unified tracker script. All interactions are handled through the launched graphical user interface.
 
-### Sales Rank Analysis
-1. Ensure your Keepa API key is in the `.env.local` file
-2. Run the sales rank analyzer:
-   ```
-   python sales_rank_analyzer.py
-   ```
-3. Enter the ASIN and number of days to analyze when prompted.
-4. View detailed sales rank statistics and history.
+```bash
+python3 keepa_tracker.py
+```
 
-## Files
-- `buybox_amazon_percent.py`: Main script for buybox analysis
-- `sales_rank_analyzer.py`: Script for sales rank analysis
-- `requirements.txt`: Python dependencies
-- `.env.local`: Your Keepa API key
+### Legacy standalone scripts
+While the main entry point is recommended, there are individual legacy scripts if you prefer running separate GUIs:
+- `buybox_amazon_percent.py` (Main Buybox module)
+- `sales_rank_analyzer.py` (Sales rank analytics)
 
-## Keepa API Limitations
+## Privacy & Security
 
-**Important Note**: The Keepa API provides individual product sales rank data but does NOT provide:
-- Average sales rank for entire categories or subcategories
-- Aggregated category data
-- Average sales rank for the last 30 days across multiple products
-
-The sales rank analyzer focuses on individual product analysis, which is what the Keepa API supports.
+The `.gitignore` has been updated to prevent tracking of local SQLite databases (`*.db`), configuration state (`*.json`), and environment variables (`.env`). Your search history and API keys remain safe and local to your machine. 
 
 ## License
-MIT
+
+MIT 
 
 ## Author
-Cristal Arc / Talavera
 
-## Changelog
-See `CHANGELOG.md` for details.
+Cristalarc / Talavera
