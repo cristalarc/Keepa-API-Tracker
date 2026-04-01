@@ -546,6 +546,68 @@ class AmazonDeliveryClient:
 
         return None
 
+    @classmethod
+    def extract_seller(cls, html_text):
+        """
+        Attempt to extract the current buybox seller name from product page HTML.
+        Returns a cleaned seller name string, or None if extraction fails.
+
+        Tries four strategies in decreasing order of reliability:
+        1. <a id="sellerProfileTriggerId"> — dedicated seller anchor (most reliable)
+        2. id="merchant-info" div containing "Sold by [Name]" prose
+        3. "Ships from and sold by [Name]" phrase anywhere in page
+        4. Broad "Sold by [Name]" phrase fallback
+        """
+        if not html_text:
+            return None
+
+        # Strategy 1: dedicated seller profile trigger anchor
+        match = re.search(
+            r'id="sellerProfileTriggerId"[^>]*>(.*?)</a>',
+            html_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if match:
+            seller = cls._strip_html(match.group(1)).strip()
+            if seller:
+                return seller
+
+        # Strategy 2: merchant-info div — "Sold by [Name]" prose
+        match = re.search(
+            r'id="merchant-info"[^>]*>(.*?)</div>',
+            html_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if match:
+            text = cls._strip_html(match.group(1))
+            sold_by = re.search(r"[Ss]old by\s+(.+?)(?:\s+and\s+|\.|$)", text)
+            if sold_by:
+                seller = sold_by.group(1).strip()
+                if seller:
+                    return seller
+
+        # Strategy 3: "Ships from and sold by [Name]" phrase
+        match = re.search(
+            r"[Ss]hips from and sold by\s+([^.<\n]{2,80})",
+            html_text,
+        )
+        if match:
+            seller = cls._strip_html(match.group(1)).strip().rstrip(".")
+            if seller:
+                return seller
+
+        # Strategy 4: broad "Sold by [Name]" fallback
+        match = re.search(
+            r"[Ss]old by[:\s]+([^<\n.]{2,80})",
+            html_text,
+        )
+        if match:
+            seller = cls._strip_html(match.group(1)).strip().rstrip(".")
+            if seller and len(seller) <= 80:
+                return seller
+
+        return None
+
     def fetch_delivery_speed(self, asin, zip_code):
         """
         Fetch delivery details for a single ASIN + ZIP pair.
@@ -559,6 +621,7 @@ class AmazonDeliveryClient:
             "zip_verified": False,
             "status": "error",
             "error": None,
+            "seller": None,
         }
 
         zip_set, zip_error = self._set_zip_code(asin, zip_code)
@@ -578,6 +641,8 @@ class AmazonDeliveryClient:
         result["displayed_zip"] = self.extract_displayed_zip(html_text)
         if result["displayed_zip"]:
             result["zip_verified"] = result["displayed_zip"].startswith(zip_code[:5])
+
+        result["seller"] = self.extract_seller(html_text)
 
         delivery_text = self.extract_delivery_message(html_text)
         if not delivery_text:
@@ -1233,6 +1298,7 @@ class DeliverySpeedTracker:
             "zip_code",
             "estimated_days",
             "review",
+            "seller",
             "threshold_days",
             "status",
             "zip_verified",
@@ -1245,6 +1311,7 @@ class DeliverySpeedTracker:
         tree.heading("zip_code", text="ZIP")
         tree.heading("estimated_days", text="Est. Days")
         tree.heading("review", text="Review")
+        tree.heading("seller", text="Seller")
         tree.heading("threshold_days", text="Threshold")
         tree.heading("status", text="Status")
         tree.heading("zip_verified", text="ZIP Verified")
@@ -1256,6 +1323,7 @@ class DeliverySpeedTracker:
         tree.column("zip_code", width=90, anchor=tk.W)
         tree.column("estimated_days", width=90, anchor=tk.CENTER)
         tree.column("review", width=80, anchor=tk.CENTER)
+        tree.column("seller", width=150, anchor=tk.W)
         tree.column("threshold_days", width=80, anchor=tk.CENTER)
         tree.column("status", width=100, anchor=tk.W)
         tree.column("zip_verified", width=95, anchor=tk.CENTER)
@@ -1274,6 +1342,11 @@ class DeliverySpeedTracker:
         tree.tag_configure("review_fail", background="#FFF4E5")
         tree.tag_configure("captcha", background="#FFF4E5")
         tree.tag_configure("error", background="#FDECEC")
+        # Seller tags — listed last in the tags tuple so they take visual priority.
+        # Amazon = green (#EAF8EA), non-Amazon = red (#FDECEC), unknown = yellow (#FFF4E5).
+        tree.tag_configure("seller_amazon", background="#EAF8EA")
+        tree.tag_configure("seller_other", background="#FDECEC")
+        tree.tag_configure("seller_unknown", background="#FFF4E5")
 
         details_frame = ttk.LabelFrame(container, text="Selected Row Details", padding="8")
         details_frame.pack(fill=tk.BOTH, expand=False, pady=(10, 0))
@@ -1338,13 +1411,22 @@ class DeliverySpeedTracker:
 
             for row in rows:
                 if row.get("review") == "PASS":
-                    tag = "pass"
+                    base_tag = "pass"
                 elif row.get("status") == "captcha":
-                    tag = "captcha"
+                    base_tag = "captcha"
                 elif row.get("status") == "ok":
-                    tag = "review_fail"
+                    base_tag = "review_fail"
                 else:
-                    tag = "error"
+                    base_tag = "error"
+
+                # Seller tag is listed second so it overrides base_tag for row background.
+                seller_val = row.get("seller") or ""
+                if not seller_val:
+                    s_tag = "seller_unknown"
+                elif "amazon" in seller_val.lower():
+                    s_tag = "seller_amazon"
+                else:
+                    s_tag = "seller_other"
 
                 tree.insert(
                     "",
@@ -1355,13 +1437,14 @@ class DeliverySpeedTracker:
                         row.get("zip_code", ""),
                         row.get("estimated_days", "") if row.get("estimated_days") is not None else "",
                         row.get("review", ""),
+                        seller_val,
                         row.get("threshold_days", ""),
                         row.get("status", ""),
                         "Yes" if row.get("zip_verified") else "No",
                         row.get("displayed_zip", "") or "",
                         row.get("review_reason", ""),
                     ),
-                    tags=(tag,),
+                    tags=(base_tag, s_tag),
                 )
 
             summary_var.set(
@@ -1406,6 +1489,7 @@ class DeliverySpeedTracker:
                     f"ZIP requested: {matched_row.get('zip_code', '')}\n"
                     f"Estimated days: {matched_row.get('estimated_days', '')}\n"
                     f"Review: {matched_row.get('review', '')} | Threshold: {matched_row.get('threshold_days', '')}\n"
+                    f"Seller: {matched_row.get('seller', '') or 'N/A'}\n"
                     f"Status: {matched_row.get('status', '')}\n"
                     f"ZIP verified on page: {'Yes' if matched_row.get('zip_verified') else 'No'} (page showed: {matched_row.get('displayed_zip', '') or 'N/A'})\n"
                     f"Reason: {matched_row.get('review_reason', '')}\n\n"
@@ -1567,6 +1651,7 @@ class DeliverySpeedTracker:
             "zip_code",
             "estimated_days",
             "review",
+            "seller",
             "threshold_days",
             "checked_at",
             "pair_standard_hits",
@@ -1582,6 +1667,7 @@ class DeliverySpeedTracker:
         tree.heading("zip_code", text="ZIP Requested")
         tree.heading("estimated_days", text="Est. Days")
         tree.heading("review", text="Review")
+        tree.heading("seller", text="Seller")
         tree.heading("threshold_days", text="Threshold")
         tree.heading("checked_at", text="Checked At")
         tree.heading("pair_standard_hits", text="Passes/Checks")
@@ -1596,6 +1682,7 @@ class DeliverySpeedTracker:
         tree.column("zip_code", width=100, anchor=tk.W)
         tree.column("estimated_days", width=90, anchor=tk.CENTER)
         tree.column("review", width=80, anchor=tk.CENTER)
+        tree.column("seller", width=150, anchor=tk.W)
         tree.column("threshold_days", width=80, anchor=tk.CENTER)
         tree.column("checked_at", width=145, anchor=tk.W)
         tree.column("pair_standard_hits", width=110, anchor=tk.CENTER)
@@ -1618,16 +1705,31 @@ class DeliverySpeedTracker:
         tree.tag_configure("review_fail", background="#FFF4E5")
         tree.tag_configure("captcha", background="#FFF4E5")
         tree.tag_configure("error", background="#FDECEC")
+        # Seller tags — listed last in the tags tuple so they take visual priority.
+        # Amazon = green (#EAF8EA), non-Amazon = red (#FDECEC), unknown = yellow (#FFF4E5).
+        tree.tag_configure("seller_amazon", background="#EAF8EA")
+        tree.tag_configure("seller_other", background="#FDECEC")
+        tree.tag_configure("seller_unknown", background="#FFF4E5")
+
+        def _seller_tag(seller_value):
+            if not seller_value:
+                return "seller_unknown"
+            if "amazon" in seller_value.lower():
+                return "seller_amazon"
+            return "seller_other"
 
         for row in results:
             if row.get("review") == "PASS":
-                tag = "pass"
+                base_tag = "pass"
             elif row["status"] == "captcha":
-                tag = "captcha"
+                base_tag = "captcha"
             elif row["status"] == "ok":
-                tag = "review_fail"
+                base_tag = "review_fail"
             else:
-                tag = "error"
+                base_tag = "error"
+
+            # Seller tag is listed second so it overrides base_tag for row background.
+            s_tag = _seller_tag(row.get("seller"))
 
             tree.insert(
                 "",
@@ -1637,6 +1739,7 @@ class DeliverySpeedTracker:
                     row.get("zip_code", ""),
                     row.get("estimated_days", ""),
                     row.get("review", ""),
+                    row.get("seller") or "",
                     row.get("threshold_days", ""),
                     row.get("checked_at", ""),
                     row.get("pair_standard_hits", ""),
@@ -1647,7 +1750,7 @@ class DeliverySpeedTracker:
                     row.get("delivery_text", "") or "",
                     row.get("error", "") or "",
                 ),
-                tags=(tag,),
+                tags=(base_tag, s_tag),
             )
 
         details_frame = ttk.LabelFrame(container, text="Selected Row Details", padding="8")
@@ -1673,14 +1776,15 @@ class DeliverySpeedTracker:
                     f"ASIN: {values[0]}\n"
                     f"ZIP requested: {values[1]}\n"
                     f"Estimated days: {values[2]}\n"
-                    f"Review: {values[3]} | Threshold: {values[4]} day(s)\n"
-                    f"Checked at: {values[5]}\n"
-                    f"Historical standards hits for this ASIN+ZIP: {values[6]}\n"
-                    f"Review reason: {values[7]}\n"
-                    f"Status: {values[8]}\n"
-                    f"ZIP verified on page: {values[9]} (page showed: {values[10]})\n\n"
-                    f"Delivery message:\n{values[11]}\n\n"
-                    f"Error / Notes:\n{values[12]}"
+                    f"Review: {values[3]} | Threshold: {values[5]} day(s)\n"
+                    f"Seller: {values[4]}\n"
+                    f"Checked at: {values[6]}\n"
+                    f"Historical standards hits for this ASIN+ZIP: {values[7]}\n"
+                    f"Review reason: {values[8]}\n"
+                    f"Status: {values[9]}\n"
+                    f"ZIP verified on page: {values[10]} (page showed: {values[11]})\n\n"
+                    f"Delivery message:\n{values[12]}\n\n"
+                    f"Error / Notes:\n{values[13]}"
                 ),
             )
             details_box.config(state=tk.DISABLED)
