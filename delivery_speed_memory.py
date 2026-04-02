@@ -37,7 +37,8 @@ class DeliverySpeedMemoryStore:
                     delivery_text TEXT,
                     zip_verified INTEGER NOT NULL,
                     displayed_zip TEXT,
-                    error TEXT
+                    error TEXT,
+                    seller TEXT
                 )
                 """
             )
@@ -53,6 +54,13 @@ class DeliverySpeedMemoryStore:
                 ON delivery_speed_checks (checked_at)
                 """
             )
+            # Auto-migration: add seller column to databases created before this feature.
+            cursor.execute("PRAGMA table_info(delivery_speed_checks)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+            if "seller" not in existing_columns:
+                cursor.execute(
+                    "ALTER TABLE delivery_speed_checks ADD COLUMN seller TEXT"
+                )
             conn.commit()
 
     @staticmethod
@@ -96,8 +104,9 @@ class DeliverySpeedMemoryStore:
                     delivery_text,
                     zip_verified,
                     displayed_zip,
-                    error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    error,
+                    seller
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     timestamp,
@@ -112,6 +121,7 @@ class DeliverySpeedMemoryStore:
                     1 if result_row.get("zip_verified") else 0,
                     result_row.get("displayed_zip"),
                     result_row.get("error"),
+                    result_row.get("seller"),
                 ),
             )
             conn.commit()
@@ -224,7 +234,7 @@ class DeliverySpeedMemoryStore:
         """
         query = (
             "SELECT id, checked_at, asin, zip_code, estimated_days, status, threshold_days, "
-            "is_pass, review_reason, delivery_text, zip_verified, displayed_zip, error "
+            "is_pass, review_reason, delivery_text, zip_verified, displayed_zip, error, seller "
             "FROM delivery_speed_checks"
         )
         clauses = []
@@ -280,6 +290,7 @@ class DeliverySpeedMemoryStore:
                     "zip_verified": bool(row[10]),
                     "displayed_zip": row[11],
                     "error": row[12],
+                    "seller": row[13],
                 }
             )
         return export_rows
