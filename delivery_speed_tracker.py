@@ -334,6 +334,32 @@ class AmazonDeliveryClient:
             return html_text[start_index:end_index]
         return None
 
+    @staticmethod
+    def _extract_buybox_seller_region(html_text):
+        """
+        Narrow seller extraction to right-rail buybox content when possible.
+        """
+        if not html_text:
+            return None
+
+        lower_html = html_text.lower()
+        start_markers = [
+            'id="desktop_buybox"',
+            "id='desktop_buybox'",
+            'id="buybox"',
+            "id='buybox'",
+        ]
+        for marker in start_markers:
+            start_index = lower_html.find(marker)
+            if start_index == -1:
+                continue
+
+            # Keep a broad bounded window that includes active offer rows
+            # plus nearby shipper/seller blocks.
+            end_index = min(len(html_text), start_index + 220000)
+            return html_text[start_index:end_index]
+        return None
+
     @classmethod
     def _select_best_delivery_candidate(cls, candidates):
         """
@@ -552,18 +578,79 @@ class AmazonDeliveryClient:
         Attempt to extract the current buybox seller name from product page HTML.
         Returns a cleaned seller name string, or None if extraction fails.
 
-        Tries four strategies in decreasing order of reliability:
-        1. <a id="sellerProfileTriggerId"> — dedicated seller anchor (most reliable)
-        2. id="merchant-info" div containing "Sold by [Name]" prose
-        3. "Ships from and sold by [Name]" phrase anywhere in page
-        4. Broad "Sold by [Name]" phrase fallback
+        Tries buybox-first strategies before broad page fallbacks:
+        1. Active buybox row with <a id='sellerProfileTriggerId'> anchor
+        2. Active buybox row merchant-info "Sold by [Name]" prose
+        3. Buybox section sellerProfileTriggerId / merchant-info fallbacks
+        4. Whole-page seller patterns as last resort
         """
         if not html_text:
             return None
 
-        # Strategy 1: dedicated seller profile trigger anchor
+        seller_anchor_pattern = r"id\s*=\s*['\"]sellerProfileTriggerId['\"][^>]*>(.*?)</a>"
+        merchant_info_pattern = r"id\s*=\s*['\"]merchant-info['\"][^>]*>(.*?)</div>"
+
+        def _extract_from_merchant_info(text_block):
+            text = cls._strip_html(text_block)
+            sold_by = re.search(r"[Ss]old by\s+(.+?)(?:\s+and\s+|\.|$)", text)
+            if not sold_by:
+                return None
+            seller_name = sold_by.group(1).strip()
+            return seller_name if seller_name else None
+
+        buybox_region = cls._extract_buybox_seller_region(html_text) or ""
+        if buybox_region:
+            # Strategy 1: seller anchor tied to current active buybox row.
+            match = re.search(
+                r"data-csa-c-is-in-initial-active-row\s*=\s*['\"]true['\"]"
+                r"[\s\S]{0,6000}?"
+                + seller_anchor_pattern,
+                buybox_region,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if match:
+                seller = cls._strip_html(match.group(1)).strip()
+                if seller:
+                    return seller
+
+            # Strategy 2: active-row merchant-info with explicit "Sold by ...".
+            match = re.search(
+                r"data-csa-c-is-in-initial-active-row\s*=\s*['\"]true['\"]"
+                r"[\s\S]{0,6000}?"
+                + merchant_info_pattern,
+                buybox_region,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if match:
+                seller = _extract_from_merchant_info(match.group(1))
+                if seller:
+                    return seller
+
+            # Strategy 3a: any buybox sellerProfileTriggerId anchor.
+            match = re.search(
+                seller_anchor_pattern,
+                buybox_region,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if match:
+                seller = cls._strip_html(match.group(1)).strip()
+                if seller:
+                    return seller
+
+            # Strategy 3b: any buybox merchant-info block.
+            match = re.search(
+                merchant_info_pattern,
+                buybox_region,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if match:
+                seller = _extract_from_merchant_info(match.group(1))
+                if seller:
+                    return seller
+
+        # Strategy 4a: whole-page seller anchor fallback.
         match = re.search(
-            r'id="sellerProfileTriggerId"[^>]*>(.*?)</a>',
+            seller_anchor_pattern,
             html_text,
             flags=re.IGNORECASE | re.DOTALL,
         )
@@ -572,35 +659,25 @@ class AmazonDeliveryClient:
             if seller:
                 return seller
 
-        # Strategy 2: merchant-info div — "Sold by [Name]" prose
+        # Strategy 4b: whole-page merchant-info fallback.
         match = re.search(
-            r'id="merchant-info"[^>]*>(.*?)</div>',
+            merchant_info_pattern,
             html_text,
             flags=re.IGNORECASE | re.DOTALL,
         )
         if match:
-            text = cls._strip_html(match.group(1))
-            sold_by = re.search(r"[Ss]old by\s+(.+?)(?:\s+and\s+|\.|$)", text)
-            if sold_by:
-                seller = sold_by.group(1).strip()
-                if seller:
-                    return seller
+            seller = _extract_from_merchant_info(match.group(1))
+            if seller:
+                return seller
 
-        # Strategy 3: "Ships from and sold by [Name]" phrase
-        match = re.search(
-            r"[Ss]hips from and sold by\s+([^.<\n]{2,80})",
-            html_text,
-        )
+        # Strategy 4c: broad phrase fallback.
+        match = re.search(r"[Ss]hips from and sold by\s+([^.<\n]{2,80})", html_text)
         if match:
             seller = cls._strip_html(match.group(1)).strip().rstrip(".")
             if seller:
                 return seller
 
-        # Strategy 4: broad "Sold by [Name]" fallback
-        match = re.search(
-            r"[Ss]old by[:\s]+([^<\n.]{2,80})",
-            html_text,
-        )
+        match = re.search(r"[Ss]old by[:\s]+([^<\n.]{2,80})", html_text)
         if match:
             seller = cls._strip_html(match.group(1)).strip().rstrip(".")
             if seller and len(seller) <= 80:
