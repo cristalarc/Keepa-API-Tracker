@@ -578,12 +578,9 @@ class AmazonDeliveryClient:
         Attempt to extract the current buybox seller name from product page HTML.
         Returns a cleaned seller name string, or None if extraction fails.
 
-        Tries buybox-first strategies before broad page fallbacks:
-        1. Active buybox row "Sold by:" value in shipper/seller accordion text
-        2. Active buybox row with <a id='sellerProfileTriggerId'> anchor
-        3. Active buybox row merchant-info "Sold by [Name]" prose
-        4. Buybox section sellerProfileTriggerId / merchant-info fallbacks
-        5. Whole-page seller patterns as last resort
+        Tries buybox-first strategies before broad page fallbacks, while
+        scoping broad phrase matching to the primary buybox area to avoid
+        secondary offers (e.g. "Save with Used", "Get it faster").
         """
         if not html_text:
             return None
@@ -676,7 +673,41 @@ class AmazonDeliveryClient:
             if seller:
                 return seller
 
-        # Strategy 5b: whole-page merchant-info fallback.
+        # Strategy 5b: tabular buybox — element with tabular-attribute-name
+        # referencing the seller (e.g. "Sold by", "Seller").
+        match = re.search(
+            r'tabular-attribute-name="[^"]*(?:[Ss]eller|[Ss]old)[^"]*"[^>]*>(.*?)</span>',
+            html_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if match:
+            content = match.group(1)
+            anchor = re.search(r"<a[^>]*>([^<]+)</a>", content, flags=re.IGNORECASE)
+            seller = cls._strip_html(anchor.group(1)).strip() if anchor else cls._strip_html(content).strip()
+            if seller:
+                return seller
+
+        # Strategy 5c: tabular buybox region — locate the "Seller" / "Shipper"
+        # label row and extract the adjacent anchor value.
+        tabular_start = re.search(
+            r'id="tabular-buybox[^"]*"',
+            html_text,
+            flags=re.IGNORECASE,
+        )
+        if tabular_start:
+            region = html_text[tabular_start.start():tabular_start.start() + 5000]
+            seller_match = re.search(
+                r"(?:Seller|Shipper)\b[^<]{0,40}</(?:span|div|td)>"
+                r"(?:\s*<[^>]+>)*\s*<a[^>]*>([^<]+)</a>",
+                region,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if seller_match:
+                seller = seller_match.group(1).strip()
+                if seller:
+                    return seller
+
+        # Strategy 5d: whole-page merchant-info fallback.
         match = re.search(
             merchant_info_pattern,
             html_text,
@@ -687,19 +718,49 @@ class AmazonDeliveryClient:
             if seller:
                 return seller
 
-        # Strategy 5c: broad phrase fallback.
-        match = re.search(r"[Ss]hips from and sold by\s+([^.<\n]{2,80})", html_text)
-        if match:
-            seller = cls._strip_html(match.group(1)).strip().rstrip(".")
-            if seller:
-                return seller
+        # Strategy 5e: "Ships from and sold by" or "Sold by" phrases — only
+        # within the primary buybox region to avoid matching secondary offers.
+        primary_region = cls._extract_primary_buybox_region(html_text)
+        if primary_region:
+            for pattern in (
+                r"[Ss]hips from and sold by\s+([^.<\n]{2,80})",
+                r"[Ss]old by[:\s]+([^<\n.]{2,80})",
+            ):
+                match = re.search(pattern, primary_region)
+                if match:
+                    seller = cls._strip_html(match.group(1)).strip().rstrip(".")
+                    if seller and len(seller) <= 80:
+                        return seller
 
-        match = re.search(r"[Ss]old by[:\s]+([^<\n.]{2,80})", html_text)
-        if match:
-            seller = cls._strip_html(match.group(1)).strip().rstrip(".")
-            if seller and len(seller) <= 80:
-                return seller
+        return None
 
+    @staticmethod
+    def _extract_primary_buybox_region(html_text):
+        """
+        Return a bounded slice of HTML covering the main buybox, stopping
+        before secondary offer sections (Get it faster, Save with Used, etc.).
+        """
+        if not html_text:
+            return None
+
+        lower = html_text.lower()
+        for marker in ('id="desktop_buybox"', 'id="buybox"', 'id="rightcol"'):
+            idx = lower.find(marker)
+            if idx == -1:
+                continue
+            region = html_text[idx:idx + 8000]
+            # Truncate at secondary-offer boundaries so broad patterns
+            # do not accidentally match alternative seller listings.
+            for cutoff in (
+                "olp-upd-new",
+                "buybox-see-all-buying-choices",
+                "get it faster",
+                "save with used",
+            ):
+                cut_idx = region.lower().find(cutoff)
+                if cut_idx > 0:
+                    region = region[:cut_idx]
+            return region
         return None
 
     def fetch_delivery_speed(self, asin, zip_code):
