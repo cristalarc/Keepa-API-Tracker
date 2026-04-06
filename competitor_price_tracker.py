@@ -261,6 +261,7 @@ class CompetitorPriceTracker:
     """
 
     def __init__(self, api_key):
+        self.all_lists_option = "All Lists"
         self.store = PriceHistoryStore()
         self.keepa_client = KeepaPriceClient(api_key)
 
@@ -273,6 +274,7 @@ class CompetitorPriceTracker:
         self.chart_canvas = None
         self.selected_asin = None
         self.selected_title = None
+        self.selected_row_list = None
 
     def open_tracker_window(self, parent_window=None):
         self.window = tk.Toplevel(parent_window) if parent_window else tk.Tk()
@@ -400,7 +402,7 @@ class CompetitorPriceTracker:
         ).pack(side=tk.RIGHT, padx=(0, 8))
 
         self.status_var = tk.StringVar(
-            value="Select lists in Batch Tracking and click Track. Use View List to inspect history."
+            value="Select lists in Batch Tracking and click Track. Use View List (or All Lists) to inspect history."
         )
         ttk.Label(container, textvariable=self.status_var, foreground="gray").pack(anchor=tk.W, pady=(0, 10))
 
@@ -411,8 +413,9 @@ class CompetitorPriceTracker:
         )
         results_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
-        columns = ("asin", "title", "current_price", "previous_price", "change", "tracked_at")
+        columns = ("list_name", "asin", "title", "current_price", "previous_price", "change", "tracked_at")
         self.results_tree = ttk.Treeview(results_frame, columns=columns, show="headings", height=12)
+        self.results_tree.heading("list_name", text="List")
         self.results_tree.heading("asin", text="ASIN")
         self.results_tree.heading("title", text="Product Title")
         self.results_tree.heading("current_price", text="Current Price")
@@ -420,8 +423,9 @@ class CompetitorPriceTracker:
         self.results_tree.heading("change", text="Change")
         self.results_tree.heading("tracked_at", text="Last Tracked")
 
+        self.results_tree.column("list_name", width=170, anchor=tk.W)
         self.results_tree.column("asin", width=120, anchor=tk.W)
-        self.results_tree.column("title", width=420, anchor=tk.W)
+        self.results_tree.column("title", width=340, anchor=tk.W)
         self.results_tree.column("current_price", width=110, anchor=tk.E)
         self.results_tree.column("previous_price", width=110, anchor=tk.E)
         self.results_tree.column("change", width=100, anchor=tk.E)
@@ -465,7 +469,9 @@ class CompetitorPriceTracker:
     def _refresh_list_choices(self):
         lists_data = load_all_asin_lists()
         list_names = sorted(lists_data.keys())
-        self.list_combo["values"] = list_names
+        view_options = [self.all_lists_option] + list_names
+        current_selection = self.list_var.get()
+        self.list_combo["values"] = view_options
         self._populate_batch_listbox(list_names)
 
         if not list_names:
@@ -475,7 +481,9 @@ class CompetitorPriceTracker:
             self._clear_history_details()
             return
 
-        if self.list_var.get() not in list_names:
+        if current_selection in view_options:
+            self.list_var.set(current_selection)
+        elif self.list_var.get() not in view_options:
             self.list_var.set(list_names[0])
         self._refresh_latest_for_selected_list()
 
@@ -552,8 +560,8 @@ class CompetitorPriceTracker:
         self._export_history_rows(rows, default_filename="price_history_all_records.csv")
 
     def _export_selected_asin_history(self):
-        selected_list = self.list_var.get().strip()
-        if not selected_list:
+        selected_view = self.list_var.get().strip()
+        if not selected_view:
             messagebox.showwarning(
                 "No List Selected",
                 "Choose a View List first.",
@@ -561,7 +569,7 @@ class CompetitorPriceTracker:
             )
             return
 
-        if not self.selected_asin:
+        if not self.selected_asin or not self.selected_row_list:
             messagebox.showwarning(
                 "No ASIN Selected",
                 "Select an ASIN row first, then export selected ASIN history.",
@@ -569,24 +577,49 @@ class CompetitorPriceTracker:
             )
             return
 
-        rows = self.store.get_price_history_rows(list_name=selected_list, asin=self.selected_asin)
-        filename = f"price_history_{selected_list}_{self.selected_asin}.csv".replace(" ", "_")
+        rows = self.store.get_price_history_rows(list_name=self.selected_row_list, asin=self.selected_asin)
+        filename = f"price_history_{self.selected_row_list}_{self.selected_asin}.csv".replace(" ", "_")
         self._export_history_rows(rows, default_filename=filename)
 
     def _refresh_latest_for_selected_list(self):
-        selected_list = self.list_var.get().strip()
+        selected_view = self.list_var.get().strip()
         lists_data = load_all_asin_lists()
-        asins = lists_data.get(selected_list, {}).get("asins", []) if selected_list else []
 
         self._clear_results_table()
         self._clear_history_details()
         self.selected_asin = None
         self.selected_title = None
+        self.selected_row_list = None
 
-        if not selected_list:
+        if not selected_view:
             self.status_var.set("Select an ASIN list.")
             return
 
+        if selected_view == self.all_lists_option:
+            total_asins = 0
+            non_empty_list_count = 0
+            for list_name in sorted(lists_data.keys()):
+                asins = lists_data.get(list_name, {}).get("asins", [])
+                if asins:
+                    non_empty_list_count += 1
+                for asin in sorted(asins):
+                    latest = self.store.get_latest_price_record(asin, list_name)
+                    previous = self.store.get_previous_price_record(asin, list_name)
+                    self._insert_latest_result_row(list_name, asin, latest, previous)
+                    total_asins += 1
+
+            if total_asins == 0:
+                self.status_var.set("All lists are empty. Add ASINs in ASIN Manager first.")
+                return
+
+            self.status_var.set(
+                f"Loaded {total_asins} ASIN rows across {non_empty_list_count} list(s). "
+                "Select a row to view history chart."
+            )
+            return
+
+        selected_list = selected_view
+        asins = lists_data.get(selected_list, {}).get("asins", [])
         if not asins:
             self.status_var.set(f"List '{selected_list}' has no ASINs.")
             return
@@ -594,38 +627,41 @@ class CompetitorPriceTracker:
         for asin in sorted(asins):
             latest = self.store.get_latest_price_record(asin, selected_list)
             previous = self.store.get_previous_price_record(asin, selected_list)
-
-            if not latest:
-                self.results_tree.insert(
-                    "",
-                    tk.END,
-                    values=(asin, "Not tracked yet", "-", "-", "-", "-"),
-                    tags=("no_data",),
-                )
-                continue
-
-            current_price = float(latest["price"])
-            previous_price = float(previous["price"]) if previous and previous["price"] is not None else None
-            change = (current_price - previous_price) if previous_price is not None else None
-            change_text = f"{change:+.2f}" if change is not None else "-"
-            change_tag = "drop" if change is not None and change < 0 else "increase" if change is not None and change > 0 else ""
-
-            self.results_tree.insert(
-                "",
-                tk.END,
-                values=(
-                    asin,
-                    latest["title"],
-                    f"${current_price:.2f}",
-                    f"${previous_price:.2f}" if previous_price is not None else "-",
-                    f"${change_text}" if change is not None else "-",
-                    latest["tracked_at"],
-                ),
-                tags=(change_tag,) if change_tag else (),
-            )
+            self._insert_latest_result_row(selected_list, asin, latest, previous)
 
         self.status_var.set(
             f"Loaded {len(asins)} ASINs from list '{selected_list}'. Select a row to view history chart."
+        )
+
+    def _insert_latest_result_row(self, list_name, asin, latest, previous):
+        if not latest:
+            self.results_tree.insert(
+                "",
+                tk.END,
+                values=(list_name, asin, "Not tracked yet", "-", "-", "-", "-"),
+                tags=("no_data",),
+            )
+            return
+
+        current_price = float(latest["price"])
+        previous_price = float(previous["price"]) if previous and previous["price"] is not None else None
+        change = (current_price - previous_price) if previous_price is not None else None
+        change_text = f"{change:+.2f}" if change is not None else "-"
+        change_tag = "drop" if change is not None and change < 0 else "increase" if change is not None and change > 0 else ""
+
+        self.results_tree.insert(
+            "",
+            tk.END,
+            values=(
+                list_name,
+                asin,
+                latest["title"],
+                f"${current_price:.2f}",
+                f"${previous_price:.2f}" if previous_price is not None else "-",
+                f"${change_text}" if change is not None else "-",
+                latest["tracked_at"],
+            ),
+            tags=(change_tag,) if change_tag else (),
         )
 
     def _track_prices_for_selected_lists(self):
@@ -640,7 +676,7 @@ class CompetitorPriceTracker:
         self._track_prices_for_lists(selected_lists)
 
     def _track_prices_for_all_lists(self):
-        list_names = list(self.list_combo["values"])
+        list_names = sorted(load_all_asin_lists().keys())
         if not list_names:
             messagebox.showwarning(
                 "No Lists Found",
@@ -754,15 +790,16 @@ class CompetitorPriceTracker:
             return
 
         row_values = self.results_tree.item(selection[0], "values")
-        asin = row_values[0]
-        title = row_values[1]
+        selected_list = row_values[0]
+        asin = row_values[1]
+        title = row_values[2]
+        self.selected_row_list = selected_list
         self.selected_asin = asin
         self.selected_title = title
-        self._load_history_for_asin(asin)
+        self._load_history_for_asin(selected_list, asin)
 
-    def _load_history_for_asin(self, asin):
-        selected_list = self.list_var.get().strip()
-        history = self.store.get_price_history(asin, selected_list)
+    def _load_history_for_asin(self, list_name, asin):
+        history = self.store.get_price_history(asin, list_name)
 
         for item in self.history_tree.get_children():
             self.history_tree.delete(item)
@@ -781,10 +818,9 @@ class CompetitorPriceTracker:
         self._draw_chart(history)
 
     def _redraw_chart_for_selection(self):
-        if not self.selected_asin:
+        if not self.selected_asin or not self.selected_row_list:
             return
-        selected_list = self.list_var.get().strip()
-        history = self.store.get_price_history(self.selected_asin, selected_list)
+        history = self.store.get_price_history(self.selected_asin, self.selected_row_list)
         self._draw_chart(history)
 
     def _draw_chart(self, history):
