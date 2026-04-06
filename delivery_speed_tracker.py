@@ -334,6 +334,32 @@ class AmazonDeliveryClient:
             return html_text[start_index:end_index]
         return None
 
+    @staticmethod
+    def _extract_buybox_seller_region(html_text):
+        """
+        Narrow seller extraction to right-rail buybox content when possible.
+        """
+        if not html_text:
+            return None
+
+        lower_html = html_text.lower()
+        start_markers = [
+            'id="desktop_buybox"',
+            "id='desktop_buybox'",
+            'id="buybox"',
+            "id='buybox'",
+        ]
+        for marker in start_markers:
+            start_index = lower_html.find(marker)
+            if start_index == -1:
+                continue
+
+            # Keep a broad bounded window that includes active offer rows
+            # plus nearby shipper/seller blocks.
+            end_index = min(len(html_text), start_index + 220000)
+            return html_text[start_index:end_index]
+        return None
+
     @classmethod
     def _select_best_delivery_candidate(cls, candidates):
         """
@@ -552,16 +578,93 @@ class AmazonDeliveryClient:
         Attempt to extract the current buybox seller name from product page HTML.
         Returns a cleaned seller name string, or None if extraction fails.
 
-        Tries strategies in decreasing order of reliability, scoping broad
-        patterns to the primary buybox area to avoid matching secondary offers
-        (e.g. "Save with Used", "Get it faster").
+        Tries buybox-first strategies before broad page fallbacks, while
+        scoping broad phrase matching to the primary buybox area to avoid
+        secondary offers (e.g. "Save with Used", "Get it faster").
         """
         if not html_text:
             return None
 
-        # Strategy 1: dedicated seller profile trigger anchor
+        seller_anchor_pattern = r"id\s*=\s*['\"]sellerProfileTriggerId['\"][^>]*>(.*?)</a>"
+        merchant_info_pattern = r"id\s*=\s*['\"]merchant-info['\"][^>]*>(.*?)</div>"
+        active_row_sold_by_pattern = (
+            r"data-csa-c-is-in-initial-active-row\s*=\s*['\"]true['\"]"
+            r"[\s\S]{0,22000}?"
+            r"[Ss]old by\s*:?\s*</span>\s*<span[^>]*>\s*(.*?)\s*</span>"
+        )
+
+        def _extract_from_merchant_info(text_block):
+            text = cls._strip_html(text_block)
+            sold_by = re.search(r"[Ss]old by\s+(.+?)(?:\s+and\s+|\.|$)", text)
+            if not sold_by:
+                return None
+            seller_name = sold_by.group(1).strip()
+            return seller_name if seller_name else None
+
+        buybox_region = cls._extract_buybox_seller_region(html_text) or ""
+        if buybox_region:
+            # Strategy 1: right-rail shipper/seller row for current active offer.
+            match = re.search(
+                active_row_sold_by_pattern,
+                buybox_region,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if match:
+                seller = cls._strip_html(match.group(1)).strip().rstrip(".")
+                if seller:
+                    return seller
+
+            # Strategy 2: seller anchor tied to current active buybox row.
+            match = re.search(
+                r"data-csa-c-is-in-initial-active-row\s*=\s*['\"]true['\"]"
+                r"[\s\S]{0,6000}?"
+                + seller_anchor_pattern,
+                buybox_region,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if match:
+                seller = cls._strip_html(match.group(1)).strip()
+                if seller:
+                    return seller
+
+            # Strategy 3: active-row merchant-info with explicit "Sold by ...".
+            match = re.search(
+                r"data-csa-c-is-in-initial-active-row\s*=\s*['\"]true['\"]"
+                r"[\s\S]{0,6000}?"
+                + merchant_info_pattern,
+                buybox_region,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if match:
+                seller = _extract_from_merchant_info(match.group(1))
+                if seller:
+                    return seller
+
+            # Strategy 4a: any buybox sellerProfileTriggerId anchor.
+            match = re.search(
+                seller_anchor_pattern,
+                buybox_region,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if match:
+                seller = cls._strip_html(match.group(1)).strip()
+                if seller:
+                    return seller
+
+            # Strategy 4b: any buybox merchant-info block.
+            match = re.search(
+                merchant_info_pattern,
+                buybox_region,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if match:
+                seller = _extract_from_merchant_info(match.group(1))
+                if seller:
+                    return seller
+
+        # Strategy 5a: whole-page seller anchor fallback.
         match = re.search(
-            r'id="sellerProfileTriggerId"[^>]*>(.*?)</a>',
+            seller_anchor_pattern,
             html_text,
             flags=re.IGNORECASE | re.DOTALL,
         )
@@ -570,7 +673,7 @@ class AmazonDeliveryClient:
             if seller:
                 return seller
 
-        # Strategy 2: tabular buybox — element with tabular-attribute-name
+        # Strategy 5b: tabular buybox — element with tabular-attribute-name
         # referencing the seller (e.g. "Sold by", "Seller").
         match = re.search(
             r'tabular-attribute-name="[^"]*(?:[Ss]eller|[Ss]old)[^"]*"[^>]*>(.*?)</span>',
@@ -584,7 +687,7 @@ class AmazonDeliveryClient:
             if seller:
                 return seller
 
-        # Strategy 3: tabular buybox region — locate the "Seller" / "Shipper"
+        # Strategy 5c: tabular buybox region — locate the "Seller" / "Shipper"
         # label row and extract the adjacent anchor value.
         tabular_start = re.search(
             r'id="tabular-buybox[^"]*"',
@@ -604,21 +707,18 @@ class AmazonDeliveryClient:
                 if seller:
                     return seller
 
-        # Strategy 4: merchant-info div — "Sold by [Name]" prose
+        # Strategy 5d: whole-page merchant-info fallback.
         match = re.search(
-            r'id="merchant-info"[^>]*>(.*?)</div>',
+            merchant_info_pattern,
             html_text,
             flags=re.IGNORECASE | re.DOTALL,
         )
         if match:
-            text = cls._strip_html(match.group(1))
-            sold_by = re.search(r"[Ss]old by\s+(.+?)(?:\s+and\s+|\.|$)", text)
-            if sold_by:
-                seller = sold_by.group(1).strip()
-                if seller:
-                    return seller
+            seller = _extract_from_merchant_info(match.group(1))
+            if seller:
+                return seller
 
-        # Strategy 5: "Ships from and sold by" or "Sold by" phrases — only
+        # Strategy 5e: "Ships from and sold by" or "Sold by" phrases — only
         # within the primary buybox region to avoid matching secondary offers.
         primary_region = cls._extract_primary_buybox_region(html_text)
         if primary_region:
