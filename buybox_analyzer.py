@@ -10,11 +10,11 @@ from datetime import datetime, timedelta
 import pytz
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext, simpledialog
-import pyautogui
 from asin_manager import (
     load_saved_asins, load_all_asin_lists, validate_asin, validate_asin_list,
     add_asins_to_saved_list, save_asin_lists
 )
+from window_utils import center_window_on_parent
 
 
 # Amazon's seller ID constant
@@ -363,19 +363,16 @@ class BuyboxAnalyzer:
         # Set minimum size to ensure UI elements are visible
         root.minsize(700, 650)
         
-        # Center the window on screen with a larger default size
-        root.update_idletasks()
+        # Center the window on the same screen as the parent
         window_width = 750
         window_height = 700
-        x = (root.winfo_screenwidth() // 2) - (window_width // 2)
-        y = (root.winfo_screenheight() // 2) - (window_height // 2)
-        root.geometry(f'{window_width}x{window_height}+{x}+{y}')
-        
+        center_window_on_parent(root, parent_window, window_width, window_height)
+
         # Show window on top initially
         root.lift()
         root.attributes('-topmost', True)
         root.after_idle(lambda: root.attributes('-topmost', False))
-        
+
         # Variables to store input values
         asin_var = tk.StringVar()
         year_var = tk.StringVar()
@@ -399,36 +396,31 @@ class BuyboxAnalyzer:
             manager_window.resizable(True, True)
             manager_window.minsize(700, 500)
             
-            # Center the window with a larger default size
-            manager_window.update_idletasks()
-            window_width = 900
-            window_height = 700
-            x = (manager_window.winfo_screenwidth() // 2) - (window_width // 2)
-            y = (manager_window.winfo_screenheight() // 2) - (window_height // 2)
-            manager_window.geometry(f'{window_width}x{window_height}+{x}+{y}')
-            
+            # Center the window on the same screen as the parent
+            center_window_on_parent(manager_window, root, 900, 700)
+
             # Load current ASIN lists
             lists_data = load_all_asin_lists()
-            
+
             # Create main frame
             main_frame = ttk.Frame(manager_window, padding="20")
             main_frame.pack(fill=tk.BOTH, expand=True)
-            
+
             # Title
             ttk.Label(main_frame, text="ASIN Manager", font=("Arial", 16, "bold")).pack(pady=(0, 20))
-            
+
             # Create notebook for tabs
             notebook = ttk.Notebook(main_frame)
             notebook.pack(fill=tk.BOTH, expand=True)
-            
+
             # Add ASINs tab
             add_frame = ttk.Frame(notebook, padding="10")
             notebook.add(add_frame, text="Add ASINs")
-            
+
             # List selection for adding ASINs
             list_selection_frame = ttk.Frame(add_frame)
             list_selection_frame.pack(fill=tk.X, pady=(0, 10))
-            
+
             ttk.Label(list_selection_frame, text="Add to list:").pack(side=tk.LEFT)
             list_names = list(lists_data.keys()) if lists_data else ["Default List"]
             selected_list_var = tk.StringVar(value=list_names[0] if list_names else "Default List")
@@ -681,16 +673,12 @@ class BuyboxAnalyzer:
                 asin_label.grid_remove()
                 asin_input_frame.grid_remove()
                 asin_manager_button.grid_remove()
-                # Increase window height for batch mode
-                root.geometry(f'600x700+{x}+{y}')
             else:
                 # Single mode: hide batch input, show single ASIN input
                 batch_frame.grid_remove()
                 asin_label.grid()
                 asin_input_frame.grid()
                 asin_manager_button.grid()
-                # Reset window height for single mode
-                root.geometry(f'600x600+{x}+{y}')
         
         # Validation function
         def validate_inputs():
@@ -868,20 +856,15 @@ class BuyboxAnalyzer:
             list_window.resizable(True, True)
             list_window.minsize(300, 180)
             
-            # Center the list selection window with a reasonable default size
-            list_window.update_idletasks()
-            window_width = 400
-            window_height = 250
-            list_x = (list_window.winfo_screenwidth() // 2) - (window_width // 2)
-            list_y = (list_window.winfo_screenheight() // 2) - (window_height // 2)
-            list_window.geometry(f'{window_width}x{window_height}+{list_x}+{list_y}')
-            
+            # Center on the same screen as the parent
+            center_window_on_parent(list_window, root, 400, 250)
+
             ttk.Label(list_window, text="Select a list to load:").pack(pady=10)
-            
+
             list_var = tk.StringVar(value=list(lists_data.keys())[0])
             list_combobox = ttk.Combobox(list_window, textvariable=list_var, values=list(lists_data.keys()), state="readonly")
             list_combobox.pack(pady=10)
-            
+
             def load_list():
                 selected_list = list_var.get()
                 asins = lists_data[selected_list].get('asins', [])
@@ -889,7 +872,7 @@ class BuyboxAnalyzer:
                     batch_text_widget.delete("1.0", tk.END)
                     batch_text_widget.insert("1.0", "\n".join(asins))
                 list_window.destroy()
-            
+
             ttk.Button(list_window, text="Load", command=load_list).pack(pady=10)
         
         ttk.Button(batch_buttons_frame, text="Load All Saved ASINs", command=load_all_saved_asins).pack(side=tk.LEFT, padx=(0, 10))
@@ -974,40 +957,36 @@ class BuyboxAnalyzer:
             # Create progress window
             progress_window = tk.Toplevel(parent_window) if parent_window else tk.Tk()
             progress_window.title("Processing ASINs")
-            progress_window.geometry("600x200")
             progress_window.lift()
             progress_window.attributes('-topmost', True)
-            
-            # Center the progress window
-            progress_window.update_idletasks()
-            progress_x = (progress_window.winfo_screenwidth() // 2) - (600 // 2)
-            progress_y = (progress_window.winfo_screenheight() // 2) - (200 // 2)
-            progress_window.geometry(f'600x200+{progress_x}+{progress_y}')
-            
+
+            # Center on the same screen as the parent
+            center_window_on_parent(progress_window, parent_window, 600, 200)
+
             progress_label = ttk.Label(progress_window, text="Processing ASINs...", font=("Arial", 12))
             progress_label.pack(pady=20)
-            
+
             progress_bar = ttk.Progressbar(progress_window, length=300, mode='determinate')
             progress_bar.pack(pady=10)
-            
+
             status_label = ttk.Label(progress_window, text="", font=("Arial", 10))
             status_label.pack(pady=10)
-            
+
             progress_bar['maximum'] = len(asins)
-            
+
             for i, asin in enumerate(asins):
                 # Update progress
                 progress_bar['value'] = i + 1
                 status_label.config(text=f"Processing ASIN {i+1}/{len(asins)}: {asin}")
                 progress_window.update()
-                
+
                 # Process ASIN
                 results, error = self.process_single_asin(asin, year, months)
                 if error:
                     errors.append(error)
                 else:
                     all_results.extend(results)
-            
+
             progress_window.destroy()
             
             # Show summary
@@ -1029,16 +1008,13 @@ class BuyboxAnalyzer:
         if parent_window:
             result_root.transient()  # Clear transient relationship
 
-        # Make window very large - almost full screen
+        # Size and position window on the same screen as the parent
         result_root.update_idletasks()
         screen_width = result_root.winfo_screenwidth()
         screen_height = result_root.winfo_screenheight()
-        # Use 95% of screen dimensions with much larger minimums
-        window_width = int(screen_width * 0.95)
-        window_height = int(screen_height * 0.90)
-        x = (screen_width - window_width) // 2
-        y = (screen_height - window_height) // 2
-        result_root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+        window_width = min(int(screen_width * 0.95), 1920)
+        window_height = min(int(screen_height * 0.90), 1080)
+        center_window_on_parent(result_root, parent_window, window_width, window_height)
 
         # Set minimum size AFTER geometry
         result_root.minsize(1200, 800)
@@ -1050,10 +1026,10 @@ class BuyboxAnalyzer:
 
         # Force update to apply all settings
         result_root.update()
-        
+
         text = scrolledtext.ScrolledText(result_root, wrap=tk.WORD, width=80, height=30)
         text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
-        
+
         # Generate output
         if len(asins) == 1:
             # Single ASIN output (original format)
@@ -1157,14 +1133,9 @@ class BuyboxAnalyzer:
         # Set minimum size to ensure UI elements are visible
         root.minsize(700, 650)
         
-        # Center the window on screen with a larger default size
-        root.update_idletasks()
-        window_width = 750
-        window_height = 700
-        x = (root.winfo_screenwidth() // 2) - (window_width // 2)
-        y = (root.winfo_screenheight() // 2) - (window_height // 2)
-        root.geometry(f'{window_width}x{window_height}+{x}+{y}')
-        
+        # Center the window on the same screen as the parent
+        center_window_on_parent(root, parent_window, 750, 700)
+
         # Show window on top initially
         root.lift()
         root.attributes('-topmost', True)
@@ -1191,13 +1162,8 @@ class BuyboxAnalyzer:
             manager_window.resizable(True, True)
             manager_window.minsize(700, 500)
             
-            # Center the window with a larger default size
-            manager_window.update_idletasks()
-            window_width = 900
-            window_height = 700
-            x = (manager_window.winfo_screenwidth() // 2) - (window_width // 2)
-            y = (manager_window.winfo_screenheight() // 2) - (window_height // 2)
-            manager_window.geometry(f'{window_width}x{window_height}+{x}+{y}')
+            # Center on the same screen as the parent
+            center_window_on_parent(manager_window, root, 900, 700)
 
             lists_data = load_all_asin_lists()
 
@@ -1584,13 +1550,8 @@ class BuyboxAnalyzer:
             list_window.resizable(True, True)
             list_window.minsize(300, 180)
 
-            # Center the window with a reasonable default size
-            list_window.update_idletasks()
-            window_width = 400
-            window_height = 250
-            list_x = (list_window.winfo_screenwidth() // 2) - (window_width // 2)
-            list_y = (list_window.winfo_screenheight() // 2) - (window_height // 2)
-            list_window.geometry(f'{window_width}x{window_height}+{list_x}+{list_y}')
+            # Center on the same screen as the parent
+            center_window_on_parent(list_window, root, 400, 250)
 
             ttk.Label(list_window, text="Select a list to load:").pack(pady=10)
 
@@ -1675,15 +1636,11 @@ class BuyboxAnalyzer:
             # Create progress window
             progress_window = tk.Toplevel(parent_window) if parent_window else tk.Tk()
             progress_window.title("Processing ASINs")
-            progress_window.geometry("600x200")
             progress_window.lift()
             progress_window.attributes('-topmost', True)
 
-            # Center the progress window
-            progress_window.update_idletasks()
-            progress_x = (progress_window.winfo_screenwidth() // 2) - (600 // 2)
-            progress_y = (progress_window.winfo_screenheight() // 2) - (200 // 2)
-            progress_window.geometry(f'600x200+{progress_x}+{progress_y}')
+            # Center on the same screen as the parent
+            center_window_on_parent(progress_window, parent_window, 600, 200)
 
             progress_label = ttk.Label(progress_window, text="Fetching current buybox owners...", font=("Arial", 12))
             progress_label.pack(pady=20)
@@ -1730,16 +1687,13 @@ class BuyboxAnalyzer:
         if parent_window:
             result_root.transient()  # Clear transient relationship
 
-        # Make window very large - almost full screen
+        # Size and position window on the same screen as the parent
         result_root.update_idletasks()
         screen_width = result_root.winfo_screenwidth()
         screen_height = result_root.winfo_screenheight()
-        # Use 95% of screen dimensions with much larger minimums
-        window_width = int(screen_width * 0.95)
-        window_height = int(screen_height * 0.90)
-        x = (screen_width - window_width) // 2
-        y = (screen_height - window_height) // 2
-        result_root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+        window_width = min(int(screen_width * 0.95), 1920)
+        window_height = min(int(screen_height * 0.90), 1080)
+        center_window_on_parent(result_root, parent_window, window_width, window_height)
 
         # Set minimum size AFTER geometry
         result_root.minsize(1200, 800)

@@ -9,8 +9,6 @@ import pandas as pd
 from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext
-import pyautogui
-
 from asin_manager import (
     load_saved_asins,
     load_all_asin_lists,
@@ -19,6 +17,7 @@ from asin_manager import (
     add_asins_to_saved_list,
     update_asin_product_types
 )
+from window_utils import center_window_on_parent
 
 
 class SalesRankAnalyzer:
@@ -305,13 +304,10 @@ class SalesRankAnalyzer:
         # Set minimum size to ensure UI elements are visible
         root.minsize(600, 500)
 
-        # Center the window on screen with a reasonable default size
-        root.update_idletasks()
+        # Center the window on the same screen as the parent
         window_width = 700
         window_height = 600
-        x = (root.winfo_screenwidth() // 2) - (window_width // 2)
-        y = (root.winfo_screenheight() // 2) - (window_height // 2)
-        root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+        center_window_on_parent(root, parent_window, window_width, window_height)
 
         # Show window on top initially
         root.lift()
@@ -351,8 +347,6 @@ class SalesRankAnalyzer:
                 input_mode_label.grid_remove()
                 manual_radio.grid_remove()
                 select_radio.grid_remove()
-                # Increase window height for batch mode
-                root.geometry(f'{window_width}x700+{x}+{y}')
             else:
                 # Single mode: hide batch input, show single ASIN input
                 batch_frame.grid_remove()
@@ -361,8 +355,6 @@ class SalesRankAnalyzer:
                 input_mode_label.grid()
                 manual_radio.grid()
                 select_radio.grid()
-                # Reset window height for single mode
-                root.geometry(f'{window_width}x{window_height}+{x}+{y}')
 
         def validate_inputs():
             """Validates all inputs and returns (asins, days, export_csv) or None if invalid"""
@@ -512,13 +504,8 @@ class SalesRankAnalyzer:
             list_window.resizable(True, True)
             list_window.minsize(300, 180)
 
-            # Center the list selection window with a reasonable default size
-            list_window.update_idletasks()
-            lw_width = 400
-            lw_height = 250
-            list_x = (list_window.winfo_screenwidth() // 2) - (lw_width // 2)
-            list_y = (list_window.winfo_screenheight() // 2) - (lw_height // 2)
-            list_window.geometry(f'{lw_width}x{lw_height}+{list_x}+{list_y}')
+            # Center on the same screen as the parent
+            center_window_on_parent(list_window, root, 400, 250)
 
             ttk.Label(list_window, text="Select a list to load:").pack(pady=10)
 
@@ -680,15 +667,11 @@ class SalesRankAnalyzer:
             # Create progress window
             progress_window = tk.Toplevel(parent_window) if parent_window else tk.Tk()
             progress_window.title("Processing ASINs")
-            progress_window.geometry("600x200")
             progress_window.lift()
             progress_window.attributes('-topmost', True)
 
-            # Center the progress window
-            progress_window.update_idletasks()
-            progress_x = (progress_window.winfo_screenwidth() // 2) - (600 // 2)
-            progress_y = (progress_window.winfo_screenheight() // 2) - (200 // 2)
-            progress_window.geometry(f'600x200+{progress_x}+{progress_y}')
+            # Center on the same screen as the parent
+            center_window_on_parent(progress_window, parent_window, 600, 200)
 
             progress_label = ttk.Label(progress_window, text="Processing ASINs...", font=("Arial", 12))
             progress_label.pack(pady=20)
@@ -762,7 +745,7 @@ class SalesRankAnalyzer:
         if parent_window:
             result_root.transient()  # Clear transient relationship
 
-        # Make window very large - almost full screen for batch, smaller for single
+        # Size and position window on the same screen as the parent
         result_root.update_idletasks()
         screen_width = result_root.winfo_screenwidth()
         screen_height = result_root.winfo_screenheight()
@@ -774,13 +757,11 @@ class SalesRankAnalyzer:
             result_root.minsize(700, 500)
         else:
             # Batch: Use 95% of screen dimensions
-            window_width = int(screen_width * 0.95)
-            window_height = int(screen_height * 0.90)
+            window_width = min(int(screen_width * 0.95), 1920)
+            window_height = min(int(screen_height * 0.90), 1080)
             result_root.minsize(1200, 800)
 
-        x = (screen_width - window_width) // 2
-        y = (screen_height - window_height) // 2
-        result_root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+        center_window_on_parent(result_root, parent_window, window_width, window_height)
 
         # Show window on top initially
         result_root.lift()

@@ -12,12 +12,12 @@ import json
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext
 from datetime import datetime, timedelta
-import pyautogui
 import requests
 import pandas as pd
 from asin_manager import (
     load_saved_asins, load_all_asin_lists, validate_asin, validate_asin_list
 )
+from window_utils import center_window_on_parent
 
 
 # Amazon's seller ID constant (used for identifying Amazon as buybox owner)
@@ -344,14 +344,9 @@ class DebugViewer:
         # Set minimum size to ensure UI elements are visible
         root.minsize(600, 650)
         
-        # Center the window on screen with a larger default size
-        root.update_idletasks()
-        window_width = 700
-        window_height = 750
-        x = (root.winfo_screenwidth() // 2) - (window_width // 2)
-        y = (root.winfo_screenheight() // 2) - (window_height // 2)
-        root.geometry(f'{window_width}x{window_height}+{x}+{y}')
-        
+        # Center the window on the same screen as the parent
+        center_window_on_parent(root, parent_window, 700, 750)
+
         # Show window on top initially
         root.lift()
         root.attributes('-topmost', True)
@@ -625,26 +620,23 @@ class DebugViewer:
         # Set minimum size
         result_root.minsize(900, 700)
         
-        # Center the window on screen with a large default size
+        # Center the window on the same screen as the parent
         result_root.update_idletasks()
         screen_width = result_root.winfo_screenwidth()
         screen_height = result_root.winfo_screenheight()
-        # Use 85% of screen dimensions with max limits
         window_width = min(int(screen_width * 0.85), 1600)
         window_height = min(int(screen_height * 0.85), 1000)
-        x = (screen_width // 2) - (window_width // 2)
-        y = (screen_height // 2) - (window_height // 2)
-        result_root.geometry(f'{window_width}x{window_height}+{x}+{y}')
-        
+        center_window_on_parent(result_root, parent_window, window_width, window_height)
+
         # Show window on top initially
         result_root.lift()
         result_root.attributes('-topmost', True)
         result_root.after_idle(lambda: result_root.attributes('-topmost', False))
-        
+
         # Create main frame with generous padding
         main_frame = ttk.Frame(result_root, padding="20")
         main_frame.pack(fill=tk.BOTH, expand=True)
-        
+
         # Title
         title_label = ttk.Label(main_frame, text=f"Debug Analysis for ASIN: {asin}", font=("Arial", 14, "bold"))
         title_label.pack(pady=(0, 10))
@@ -844,26 +836,23 @@ class DebugViewer:
         # Set minimum size
         result_root.minsize(900, 700)
         
-        # Center the window on screen with a large default size
+        # Center the window on the same screen as the parent
         result_root.update_idletasks()
         screen_width = result_root.winfo_screenwidth()
         screen_height = result_root.winfo_screenheight()
-        # Use 85% of screen dimensions with max limits
         window_width = min(int(screen_width * 0.85), 1600)
         window_height = min(int(screen_height * 0.85), 1000)
-        x = (screen_width // 2) - (window_width // 2)
-        y = (screen_height // 2) - (window_height // 2)
-        result_root.geometry(f'{window_width}x{window_height}+{x}+{y}')
-        
+        center_window_on_parent(result_root, parent_window, window_width, window_height)
+
         # Show window on top initially
         result_root.lift()
         result_root.attributes('-topmost', True)
         result_root.after_idle(lambda: result_root.attributes('-topmost', False))
-        
+
         # Create main frame with generous padding
         main_frame = ttk.Frame(result_root, padding="20")
         main_frame.pack(fill=tk.BOTH, expand=True)
-        
+
         # Title
         title_label = ttk.Label(main_frame, text=f"Sales Rank Debug Analysis for ASIN: {asin}", font=("Arial", 14, "bold"))
         title_label.pack(pady=(0, 10))
@@ -1158,14 +1147,10 @@ class DebugViewer:
         if parent_window:
             loading_window = tk.Toplevel(parent_window)
             loading_window.title("Fetching Data...")
-            loading_window.geometry("300x100")
             loading_window.transient(parent_window)
-            
-            # Center the loading window
-            loading_window.update_idletasks()
-            lx = (loading_window.winfo_screenwidth() // 2) - 150
-            ly = (loading_window.winfo_screenheight() // 2) - 50
-            loading_window.geometry(f'300x100+{lx}+{ly}')
+
+            # Center on the same screen as the parent
+            center_window_on_parent(loading_window, parent_window, 300, 100)
             
             # Show appropriate loading message based on debug type
             data_type = "sales rank" if debug_type == "sales_rank" else "buybox"

@@ -8,7 +8,6 @@ import os
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 from dotenv import load_dotenv
-import pyautogui
 import json
 from buybox_analyzer import BuyboxAnalyzer
 from sales_rank_module import SalesRankAnalyzer
@@ -19,6 +18,7 @@ from asin_manager import (
     load_all_asin_lists, save_asin_lists, validate_asin_list,
     add_asins_to_saved_list, load_saved_asins
 )
+from window_utils import center_window_on_parent
 
 
 # Load API key from .env
@@ -52,18 +52,14 @@ class KeepaTrackerApp:
         Creates and displays the main menu window.
         This is the central hub where users can select which analysis tool to use.
         """
-        mouse_x, mouse_y = pyautogui.position()
-        
         # Create the main window
         self.root = tk.Tk()
         self.root.title("Keepa API Tracker")
-        self.root.geometry(f'1000x1000+{mouse_x}+{mouse_y}')
+        self.root.resizable(True, True)
+        self.root.minsize(480, 720)
 
-        # Center the window on screen
-        self.root.update_idletasks()
-        x = (self.root.winfo_screenwidth() // 2) - (1000 // 2)
-        y = (self.root.winfo_screenheight() // 2) - (1000 // 2)
-        self.root.geometry(f'1000x1000+{x}+{y}')
+        # Center the window on the monitor where the mouse currently is
+        center_window_on_parent(self.root, None, 520, 800)
         
         # Make window stay on top initially, then allow normal behavior
         self.root.lift()
@@ -411,16 +407,13 @@ class KeepaTrackerApp:
             # Set minimum size
             manager_window.minsize(800, 600)
 
-            # Center the window with a larger default size
+            # Center the window on the same screen as the parent
             manager_window.update_idletasks()
             screen_width = manager_window.winfo_screenwidth()
             screen_height = manager_window.winfo_screenheight()
-            # Use 75% of screen dimensions
             window_width = min(int(screen_width * 0.75), 1200)
             window_height = min(int(screen_height * 0.75), 900)
-            x = (screen_width // 2) - (window_width // 2)
-            y = (screen_height // 2) - (window_height // 2)
-            manager_window.geometry(f'{window_width}x{window_height}+{x}+{y}')
+            center_window_on_parent(manager_window, self.root, window_width, window_height)
 
             # Load current ASIN lists
             lists_data = load_all_asin_lists()

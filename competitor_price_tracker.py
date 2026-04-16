@@ -12,6 +12,7 @@ import pandas as pd
 import requests
 
 from asin_manager import load_all_asin_lists
+from window_utils import center_window_on_parent
 
 
 class PriceHistoryStore:
@@ -282,14 +283,13 @@ class CompetitorPriceTracker:
         self.window.resizable(True, True)
         self.window.minsize(1200, 820)
 
+        # Size and position window on the same screen as the parent
         self.window.update_idletasks()
         screen_width = self.window.winfo_screenwidth()
         screen_height = self.window.winfo_screenheight()
         width = min(int(screen_width * 0.95), 1500)
         height = min(int(screen_height * 0.92), 980)
-        x = (screen_width - width) // 2
-        y = (screen_height - height) // 2
-        self.window.geometry(f"{width}x{height}+{x}+{y}")
+        center_window_on_parent(self.window, parent_window, width, height)
 
         self.window.lift()
         self.window.attributes("-topmost", True)
