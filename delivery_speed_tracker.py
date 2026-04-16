@@ -15,6 +15,7 @@ import pandas as pd
 import requests
 
 from asin_manager import load_all_asin_lists, load_saved_asins, validate_asin_list
+from window_utils import center_window_on_parent
 from delivery_speed_memory import DeliverySpeedMemoryStore
 from zip_list_manager import load_all_zip_lists, parse_zip_list, save_zip_list
 
@@ -832,12 +833,8 @@ class DeliverySpeedTracker:
         root.resizable(True, True)
         root.minsize(760, 700)
 
-        root.update_idletasks()
-        width = 820
-        height = 760
-        x = (root.winfo_screenwidth() // 2) - (width // 2)
-        y = (root.winfo_screenheight() // 2) - (height // 2)
-        root.geometry(f"{width}x{height}+{x}+{y}")
+        # Center the window on the same screen as the parent
+        center_window_on_parent(root, parent_window, 820, 760)
 
         root.lift()
         root.attributes("-topmost", True)
@@ -875,8 +872,9 @@ class DeliverySpeedTracker:
             pick_window.title("Select ASIN List")
             pick_window.transient(root)
             pick_window.grab_set()
-            pick_window.resizable(False, False)
-            pick_window.geometry("380x180")
+            pick_window.resizable(True, True)
+            pick_window.minsize(380, 200)
+            center_window_on_parent(pick_window, root, 420, 220)
 
             ttk.Label(pick_window, text="Choose list:").pack(pady=(20, 8))
             list_var = tk.StringVar(value=sorted(lists_data.keys())[0])
@@ -1370,14 +1368,13 @@ class DeliverySpeedTracker:
         history_root.resizable(True, True)
         history_root.minsize(1220, 820)
 
+        # Size and position window on the same screen as the parent
         history_root.update_idletasks()
         screen_width = history_root.winfo_screenwidth()
         screen_height = history_root.winfo_screenheight()
         width = min(int(screen_width * 0.95), 1500)
         height = min(int(screen_height * 0.92), 980)
-        x = (screen_width - width) // 2
-        y = (screen_height - height) // 2
-        history_root.geometry(f"{width}x{height}+{x}+{y}")
+        center_window_on_parent(history_root, parent_window, width, height)
 
         history_root.lift()
         history_root.attributes("-topmost", True)
@@ -1702,15 +1699,12 @@ class DeliverySpeedTracker:
 
         progress_window = tk.Toplevel(parent_window) if parent_window else tk.Tk()
         progress_window.title("Checking Delivery Speeds")
-        progress_window.geometry("620x220")
         progress_window.resizable(False, False)
         progress_window.lift()
         progress_window.attributes("-topmost", True)
 
-        progress_window.update_idletasks()
-        x = (progress_window.winfo_screenwidth() // 2) - (620 // 2)
-        y = (progress_window.winfo_screenheight() // 2) - (220 // 2)
-        progress_window.geometry(f"620x220+{x}+{y}")
+        # Center on the same screen as the parent
+        center_window_on_parent(progress_window, parent_window, 620, 220)
 
         ttk.Label(progress_window, text="Running ASIN + ZIP checks...", font=("Arial", 12)).pack(pady=(20, 14))
         progress = ttk.Progressbar(progress_window, length=420, mode="determinate", maximum=total)
@@ -1745,12 +1739,11 @@ class DeliverySpeedTracker:
         result_root.resizable(True, True)
         result_root.minsize(1200, 760)
 
+        # Size and position window on the same screen as the parent
         result_root.update_idletasks()
-        width = int(result_root.winfo_screenwidth() * 0.95)
-        height = int(result_root.winfo_screenheight() * 0.9)
-        x = (result_root.winfo_screenwidth() - width) // 2
-        y = (result_root.winfo_screenheight() - height) // 2
-        result_root.geometry(f"{width}x{height}+{x}+{y}")
+        width = min(int(result_root.winfo_screenwidth() * 0.95), 1920)
+        height = min(int(result_root.winfo_screenheight() * 0.9), 1080)
+        center_window_on_parent(result_root, parent_window, width, height)
         result_root.lift()
         result_root.attributes("-topmost", True)
         result_root.after_idle(lambda: result_root.attributes("-topmost", False))
