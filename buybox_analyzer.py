@@ -14,7 +14,7 @@ from asin_manager import (
     load_saved_asins, load_all_asin_lists, validate_asin, validate_asin_list,
     add_asins_to_saved_list, save_asin_lists
 )
-from window_utils import center_window_on_parent
+from window_utils import center_window_on_parent, scaled_font, scaled
 
 
 # Amazon's seller ID constant
@@ -407,7 +407,7 @@ class BuyboxAnalyzer:
             main_frame.pack(fill=tk.BOTH, expand=True)
 
             # Title
-            ttk.Label(main_frame, text="ASIN Manager", font=("Arial", 16, "bold")).pack(pady=(0, 20))
+            ttk.Label(main_frame, text="ASIN Manager", font=scaled_font("Arial", 16, "bold")).pack(pady=(0, 20))
 
             # Create notebook for tabs
             notebook = ttk.Notebook(main_frame)
@@ -495,7 +495,7 @@ class BuyboxAnalyzer:
             
             for col in columns:
                 lists_tree.heading(col, text=col)
-                lists_tree.column(col, width=150)
+                lists_tree.column(col, width=scaled(150))
             
             lists_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             
@@ -776,11 +776,11 @@ class BuyboxAnalyzer:
         main_frame.columnconfigure(2, weight=1)
         
         # Title
-        title_label = ttk.Label(main_frame, text="Buybox Analyzer", font=("Arial", 16, "bold"))
+        title_label = ttk.Label(main_frame, text="Buybox Analyzer", font=scaled_font("Arial", 16, "bold"))
         title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
         
         # Processing Mode Selection
-        ttk.Label(main_frame, text="Processing Mode:", font=("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="Processing Mode:", font=scaled_font("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
         
         single_mode_radio = ttk.Radiobutton(main_frame, text="Single ASIN", variable=batch_mode_var, value=False, command=update_batch_mode)
         single_mode_radio.grid(row=1, column=1, sticky=tk.W, pady=5)
@@ -789,7 +789,7 @@ class BuyboxAnalyzer:
         batch_mode_radio.grid(row=1, column=2, sticky=tk.W, pady=5)
         
         # ASIN Input Mode Selection (for single mode)
-        ttk.Label(main_frame, text="ASIN Input Mode:", font=("Arial", 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="ASIN Input Mode:", font=scaled_font("Arial", 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
         
         manual_radio = ttk.Radiobutton(main_frame, text="Manual Input", variable=asin_input_mode, value="manual", command=update_asin_selection)
         manual_radio.grid(row=2, column=1, sticky=tk.W, pady=5)
@@ -798,7 +798,7 @@ class BuyboxAnalyzer:
         select_radio.grid(row=2, column=2, sticky=tk.W, pady=5)
         
         # ASIN Input
-        asin_label = ttk.Label(main_frame, text="ASIN:", font=("Arial", 10))
+        asin_label = ttk.Label(main_frame, text="ASIN:", font=scaled_font("Arial", 10))
         asin_label.grid(row=3, column=0, sticky=tk.W, pady=5)
         
         # Create a frame to hold the ASIN input widgets
@@ -879,18 +879,18 @@ class BuyboxAnalyzer:
         ttk.Button(batch_buttons_frame, text="Load from List", command=load_selected_list).pack(side=tk.LEFT)
         
         # Year Input
-        ttk.Label(main_frame, text="Year:", font=("Arial", 10)).grid(row=5, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="Year:", font=scaled_font("Arial", 10)).grid(row=5, column=0, sticky=tk.W, pady=5)
         year_entry = ttk.Entry(main_frame, textvariable=year_var, width=30)
         year_entry.grid(row=5, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
         
         # Months Input
-        ttk.Label(main_frame, text="Months (comma-separated):", font=("Arial", 10)).grid(row=6, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="Months (comma-separated):", font=scaled_font("Arial", 10)).grid(row=6, column=0, sticky=tk.W, pady=5)
         months_entry = ttk.Entry(main_frame, textvariable=months_var, width=30)
         months_entry.grid(row=6, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
         
         # Help text
         help_text = "Example: 1,2,3 for January, February, March"
-        help_label = ttk.Label(main_frame, text=help_text, font=("Arial", 8), foreground="gray")
+        help_label = ttk.Label(main_frame, text=help_text, font=scaled_font("Arial", 8), foreground="gray")
         help_label.grid(row=7, column=0, columnspan=3, pady=(5, 10))
         
         # Export checkbox
@@ -963,13 +963,13 @@ class BuyboxAnalyzer:
             # Center on the same screen as the parent
             center_window_on_parent(progress_window, parent_window, 600, 200)
 
-            progress_label = ttk.Label(progress_window, text="Processing ASINs...", font=("Arial", 12))
+            progress_label = ttk.Label(progress_window, text="Processing ASINs...", font=scaled_font("Arial", 12))
             progress_label.pack(pady=20)
 
             progress_bar = ttk.Progressbar(progress_window, length=300, mode='determinate')
             progress_bar.pack(pady=10)
 
-            status_label = ttk.Label(progress_window, text="", font=("Arial", 10))
+            status_label = ttk.Label(progress_window, text="", font=scaled_font("Arial", 10))
             status_label.pack(pady=10)
 
             progress_bar['maximum'] = len(asins)
@@ -1170,7 +1170,7 @@ class BuyboxAnalyzer:
             main_frame = ttk.Frame(manager_window, padding="20")
             main_frame.pack(fill=tk.BOTH, expand=True)
 
-            ttk.Label(main_frame, text="ASIN Manager", font=("Arial", 16, "bold")).pack(pady=(0, 20))
+            ttk.Label(main_frame, text="ASIN Manager", font=scaled_font("Arial", 16, "bold")).pack(pady=(0, 20))
 
             notebook = ttk.Notebook(main_frame)
             notebook.pack(fill=tk.BOTH, expand=True)
@@ -1249,7 +1249,7 @@ class BuyboxAnalyzer:
 
             for col in columns:
                 lists_tree.heading(col, text=col)
-                lists_tree.column(col, width=150)
+                lists_tree.column(col, width=scaled(150))
 
             lists_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -1466,11 +1466,11 @@ class BuyboxAnalyzer:
         main_frame.rowconfigure(3, weight=1)
 
         # Title
-        title_label = ttk.Label(main_frame, text="Current Buybox Owners", font=("Arial", 16, "bold"))
+        title_label = ttk.Label(main_frame, text="Current Buybox Owners", font=scaled_font("Arial", 16, "bold"))
         title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
 
         # Processing Mode Selection
-        ttk.Label(main_frame, text="Processing Mode:", font=("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="Processing Mode:", font=scaled_font("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
 
         single_mode_radio = ttk.Radiobutton(main_frame, text="Single ASIN", variable=batch_mode_var, value=False, command=update_batch_mode)
         single_mode_radio.grid(row=1, column=1, sticky=tk.W, pady=5)
@@ -1479,7 +1479,7 @@ class BuyboxAnalyzer:
         batch_mode_radio.grid(row=1, column=2, sticky=tk.W, pady=5)
 
         # ASIN Input Mode Selection
-        ttk.Label(main_frame, text="ASIN Input Mode:", font=("Arial", 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="ASIN Input Mode:", font=scaled_font("Arial", 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
 
         manual_radio = ttk.Radiobutton(main_frame, text="Manual Input", variable=asin_input_mode, value="manual", command=update_asin_selection)
         manual_radio.grid(row=2, column=1, sticky=tk.W, pady=5)
@@ -1488,7 +1488,7 @@ class BuyboxAnalyzer:
         select_radio.grid(row=2, column=2, sticky=tk.W, pady=5)
 
         # ASIN Input
-        asin_label = ttk.Label(main_frame, text="ASIN:", font=("Arial", 10))
+        asin_label = ttk.Label(main_frame, text="ASIN:", font=scaled_font("Arial", 10))
         asin_label.grid(row=3, column=0, sticky=tk.W, pady=5)
 
         asin_input_frame = ttk.Frame(main_frame)
@@ -1642,13 +1642,13 @@ class BuyboxAnalyzer:
             # Center on the same screen as the parent
             center_window_on_parent(progress_window, parent_window, 600, 200)
 
-            progress_label = ttk.Label(progress_window, text="Fetching current buybox owners...", font=("Arial", 12))
+            progress_label = ttk.Label(progress_window, text="Fetching current buybox owners...", font=scaled_font("Arial", 12))
             progress_label.pack(pady=20)
 
             progress_bar = ttk.Progressbar(progress_window, length=300, mode='determinate')
             progress_bar.pack(pady=10)
 
-            status_label = ttk.Label(progress_window, text="", font=("Arial", 10))
+            status_label = ttk.Label(progress_window, text="", font=scaled_font("Arial", 10))
             status_label.pack(pady=10)
 
             progress_bar['maximum'] = len(asins)

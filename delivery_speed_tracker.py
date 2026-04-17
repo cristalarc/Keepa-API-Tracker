@@ -15,7 +15,7 @@ import pandas as pd
 import requests
 
 from asin_manager import load_all_asin_lists, load_saved_asins, validate_asin_list
-from window_utils import center_window_on_parent
+from window_utils import center_window_on_parent, scaled_font, scaled
 from delivery_speed_memory import DeliverySpeedMemoryStore
 from zip_list_manager import load_all_zip_lists, parse_zip_list, save_zip_list
 
@@ -1102,7 +1102,7 @@ class DeliverySpeedTracker:
         main_frame = ttk.Frame(root, padding="16")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        title = ttk.Label(main_frame, text="Delivery Speed by ZIP", font=("Arial", 18, "bold"))
+        title = ttk.Label(main_frame, text="Delivery Speed by ZIP", font=scaled_font("Arial", 18, "bold"))
         title.pack(anchor=tk.W, pady=(0, 10))
 
         subtitle = ttk.Label(
@@ -1250,7 +1250,7 @@ class DeliverySpeedTracker:
         height = max(canvas.winfo_height(), 260)
 
         header = f"Delivery Days History | ASIN: {asin_filter or 'All'} | ZIP: {zip_filter or 'All'}"
-        canvas.create_text(14, 10, text=header, anchor=tk.NW, fill="#222222", font=("Arial", 10, "bold"))
+        canvas.create_text(14, 10, text=header, anchor=tk.NW, fill="#222222", font=scaled_font("Arial", 10, "bold"))
 
         chart_rows = []
         for row in rows:
@@ -1325,7 +1325,7 @@ class DeliverySpeedTracker:
                 text=f"{day_tick:.1f}",
                 anchor=tk.E,
                 fill="#444444",
-                font=("Arial", 8),
+                font=scaled_font("Arial", 8),
             )
 
         x_tick_indices = sorted(set([0, len(chart_rows) // 2, len(chart_rows) - 1]))
@@ -1339,7 +1339,7 @@ class DeliverySpeedTracker:
                 text=label,
                 anchor=tk.N,
                 fill="#444444",
-                font=("Arial", 8),
+                font=scaled_font("Arial", 8),
             )
 
         points = []
@@ -1393,7 +1393,7 @@ class DeliverySpeedTracker:
         container = ttk.Frame(history_root, padding="12")
         container.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(container, text="Delivery Speed History Explorer", font=("Arial", 16, "bold")).pack(anchor=tk.W, pady=(0, 10))
+        ttk.Label(container, text="Delivery Speed History Explorer", font=scaled_font("Arial", 16, "bold")).pack(anchor=tk.W, pady=(0, 10))
 
         controls = ttk.Frame(container)
         controls.pack(fill=tk.X, pady=(0, 8))
@@ -1470,17 +1470,17 @@ class DeliverySpeedTracker:
         tree.heading("displayed_zip", text="ZIP on Page")
         tree.heading("review_reason", text="Review Reason")
 
-        tree.column("checked_at", width=150, anchor=tk.W)
-        tree.column("asin", width=120, anchor=tk.W)
-        tree.column("zip_code", width=90, anchor=tk.W)
-        tree.column("estimated_days", width=90, anchor=tk.CENTER)
-        tree.column("review", width=80, anchor=tk.CENTER)
-        tree.column("seller", width=150, anchor=tk.W)
-        tree.column("threshold_days", width=80, anchor=tk.CENTER)
-        tree.column("status", width=100, anchor=tk.W)
-        tree.column("zip_verified", width=95, anchor=tk.CENTER)
-        tree.column("displayed_zip", width=100, anchor=tk.W)
-        tree.column("review_reason", width=380, anchor=tk.W)
+        tree.column("checked_at", width=scaled(150), anchor=tk.W)
+        tree.column("asin", width=scaled(120), anchor=tk.W)
+        tree.column("zip_code", width=scaled(90), anchor=tk.W)
+        tree.column("estimated_days", width=scaled(90), anchor=tk.CENTER)
+        tree.column("review", width=scaled(80), anchor=tk.CENTER)
+        tree.column("seller", width=scaled(150), anchor=tk.W)
+        tree.column("threshold_days", width=scaled(80), anchor=tk.CENTER)
+        tree.column("status", width=scaled(100), anchor=tk.W)
+        tree.column("zip_verified", width=scaled(95), anchor=tk.CENTER)
+        tree.column("displayed_zip", width=scaled(100), anchor=tk.W)
+        tree.column("review_reason", width=scaled(380), anchor=tk.W)
 
         tree_scrollbar_y = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
         tree_scrollbar_x = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=tree.xview)
@@ -1706,7 +1706,7 @@ class DeliverySpeedTracker:
         # Center on the same screen as the parent
         center_window_on_parent(progress_window, parent_window, 620, 220)
 
-        ttk.Label(progress_window, text="Running ASIN + ZIP checks...", font=("Arial", 12)).pack(pady=(20, 14))
+        ttk.Label(progress_window, text="Running ASIN + ZIP checks...", font=scaled_font("Arial", 12)).pack(pady=(20, 14))
         progress = ttk.Progressbar(progress_window, length=420, mode="determinate", maximum=total)
         progress.pack()
         status_var = tk.StringVar(value="Starting...")
@@ -1761,7 +1761,7 @@ class DeliverySpeedTracker:
             f"Current run: {len(results)} checks | Status OK: {ok_count} | Captcha: {captcha_count} | Issues: {issue_count} | "
             f"PASS: {run_pass_count} | FAIL: {run_fail_count} (threshold <= {threshold_days} days)"
         )
-        ttk.Label(container, text=summary_text, font=("Arial", 11, "bold")).pack(anchor=tk.W, pady=(0, 8))
+        ttk.Label(container, text=summary_text, font=scaled_font("Arial", 11, "bold")).pack(anchor=tk.W, pady=(0, 8))
 
         historical_text = (
             f"Historical up-to-standard: {overall_memory['pass_checks']} / {overall_memory['total_checks']} checks "
@@ -1826,20 +1826,20 @@ class DeliverySpeedTracker:
         tree.heading("delivery_text", text="Delivery Message")
         tree.heading("error", text="Error / Notes")
 
-        tree.column("asin", width=120, anchor=tk.W)
-        tree.column("zip_code", width=100, anchor=tk.W)
-        tree.column("estimated_days", width=90, anchor=tk.CENTER)
-        tree.column("review", width=80, anchor=tk.CENTER)
-        tree.column("seller", width=150, anchor=tk.W)
-        tree.column("threshold_days", width=80, anchor=tk.CENTER)
-        tree.column("checked_at", width=145, anchor=tk.W)
-        tree.column("pair_standard_hits", width=110, anchor=tk.CENTER)
-        tree.column("review_reason", width=240, anchor=tk.W)
-        tree.column("status", width=90, anchor=tk.W)
-        tree.column("zip_verified", width=90, anchor=tk.CENTER)
-        tree.column("displayed_zip", width=100, anchor=tk.W)
-        tree.column("delivery_text", width=400, anchor=tk.W)
-        tree.column("error", width=280, anchor=tk.W)
+        tree.column("asin", width=scaled(120), anchor=tk.W)
+        tree.column("zip_code", width=scaled(100), anchor=tk.W)
+        tree.column("estimated_days", width=scaled(90), anchor=tk.CENTER)
+        tree.column("review", width=scaled(80), anchor=tk.CENTER)
+        tree.column("seller", width=scaled(150), anchor=tk.W)
+        tree.column("threshold_days", width=scaled(80), anchor=tk.CENTER)
+        tree.column("checked_at", width=scaled(145), anchor=tk.W)
+        tree.column("pair_standard_hits", width=scaled(110), anchor=tk.CENTER)
+        tree.column("review_reason", width=scaled(240), anchor=tk.W)
+        tree.column("status", width=scaled(90), anchor=tk.W)
+        tree.column("zip_verified", width=scaled(90), anchor=tk.CENTER)
+        tree.column("displayed_zip", width=scaled(100), anchor=tk.W)
+        tree.column("delivery_text", width=scaled(400), anchor=tk.W)
+        tree.column("error", width=scaled(280), anchor=tk.W)
 
         scrollbar_y = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
         scrollbar_x = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=tree.xview)

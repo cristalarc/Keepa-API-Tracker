@@ -18,7 +18,7 @@ from asin_manager import (
     load_all_asin_lists, save_asin_lists, validate_asin_list,
     add_asins_to_saved_list, load_saved_asins
 )
-from window_utils import center_window_on_parent
+from window_utils import center_window_on_parent, init_dpi_scaling, scaled_font, scaled
 
 
 # Load API key from .env
@@ -54,6 +54,7 @@ class KeepaTrackerApp:
         """
         # Create the main window
         self.root = tk.Tk()
+        init_dpi_scaling(self.root)
         self.root.title("Keepa API Tracker")
         self.root.resizable(True, True)
         self.root.minsize(480, 720)
@@ -74,7 +75,7 @@ class KeepaTrackerApp:
         title_label = ttk.Label(
             main_frame, 
             text="Keepa API Tracker", 
-            font=("Arial", 24, "bold")
+            font=scaled_font("Arial", 24, "bold")
         )
         title_label.pack(pady=(0, 30))
         
@@ -82,7 +83,7 @@ class KeepaTrackerApp:
         subtitle_label = ttk.Label(
             main_frame, 
             text="Select an analysis tool:", 
-            font=("Arial", 12)
+            font=scaled_font("Arial", 12)
         )
         subtitle_label.pack(pady=(0, 20))
         
@@ -104,7 +105,7 @@ class KeepaTrackerApp:
         buybox_desc = ttk.Label(
             button_frame,
             text="Analyze Amazon buybox ownership percentages",
-            font=("Arial", 9),
+            font=scaled_font("Arial", 9),
             foreground="gray"
         )
         buybox_desc.pack(pady=(0, 10))
@@ -122,7 +123,7 @@ class KeepaTrackerApp:
         current_owners_desc = ttk.Label(
             button_frame,
             text="Get current buybox owner for list of ASINs",
-            font=("Arial", 9),
+            font=scaled_font("Arial", 9),
             foreground="gray"
         )
         current_owners_desc.pack(pady=(0, 10))
@@ -140,7 +141,7 @@ class KeepaTrackerApp:
         sales_rank_desc = ttk.Label(
             button_frame,
             text="Analyze product sales rank trends",
-            font=("Arial", 9),
+            font=scaled_font("Arial", 9),
             foreground="gray"
         )
         sales_rank_desc.pack(pady=(0, 10))
@@ -158,7 +159,7 @@ class KeepaTrackerApp:
         competitor_price_desc = ttk.Label(
             button_frame,
             text="Track competitor ASIN prices with history and drop highlights",
-            font=("Arial", 9),
+            font=scaled_font("Arial", 9),
             foreground="gray"
         )
         competitor_price_desc.pack(pady=(0, 10))
@@ -176,7 +177,7 @@ class KeepaTrackerApp:
         delivery_speed_desc = ttk.Label(
             button_frame,
             text="Estimate buybox delivery days for ASINs across ZIP codes",
-            font=("Arial", 9),
+            font=scaled_font("Arial", 9),
             foreground="gray"
         )
         delivery_speed_desc.pack(pady=(0, 10))
@@ -194,7 +195,7 @@ class KeepaTrackerApp:
         asin_manager_desc = ttk.Label(
             button_frame,
             text="Manage, import, and export ASIN lists",
-            font=("Arial", 9),
+            font=scaled_font("Arial", 9),
             foreground="gray"
         )
         asin_manager_desc.pack(pady=(0, 10))
@@ -215,7 +216,7 @@ class KeepaTrackerApp:
         debug_mode_desc = ttk.Label(
             button_frame,
             text="View raw API data and processed results for verification",
-            font=("Arial", 9),
+            font=scaled_font("Arial", 9),
             foreground="gray"
         )
         debug_mode_desc.pack(pady=(0, 10))
@@ -233,7 +234,7 @@ class KeepaTrackerApp:
         footer_label = ttk.Label(
             main_frame,
             text="All tools will return to this menu when finished",
-            font=("Arial", 8),
+            font=scaled_font("Arial", 8),
             foreground="gray"
         )
         footer_label.pack(side=tk.BOTTOM, pady=(20, 0))
@@ -423,7 +424,7 @@ class KeepaTrackerApp:
             main_frame.pack(fill=tk.BOTH, expand=True)
 
             # Title
-            ttk.Label(main_frame, text="ASIN Manager", font=("Arial", 18, "bold")).pack(pady=(0, 20))
+            ttk.Label(main_frame, text="ASIN Manager", font=scaled_font("Arial", 18, "bold")).pack(pady=(0, 20))
 
             # Create notebook for tabs
             notebook = ttk.Notebook(main_frame)
@@ -509,7 +510,7 @@ class KeepaTrackerApp:
 
             for col in columns:
                 lists_tree.heading(col, text=col)
-                lists_tree.column(col, width=200)
+                lists_tree.column(col, width=scaled(200))
 
             lists_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 

@@ -17,7 +17,7 @@ from asin_manager import (
     add_asins_to_saved_list,
     update_asin_product_types
 )
-from window_utils import center_window_on_parent
+from window_utils import center_window_on_parent, scaled_font, scaled
 
 
 class SalesRankAnalyzer:
@@ -427,11 +427,11 @@ class SalesRankAnalyzer:
         main_frame.columnconfigure(2, weight=1)
 
         # Title
-        title_label = ttk.Label(main_frame, text="Sales Rank Analyzer", font=("Arial", 16, "bold"))
+        title_label = ttk.Label(main_frame, text="Sales Rank Analyzer", font=scaled_font("Arial", 16, "bold"))
         title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
 
         # Processing Mode Selection
-        ttk.Label(main_frame, text="Processing Mode:", font=("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="Processing Mode:", font=scaled_font("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
 
         single_mode_radio = ttk.Radiobutton(main_frame, text="Single ASIN", variable=batch_mode_var, value=False, command=update_batch_mode)
         single_mode_radio.grid(row=1, column=1, sticky=tk.W, pady=5)
@@ -440,7 +440,7 @@ class SalesRankAnalyzer:
         batch_mode_radio.grid(row=1, column=2, sticky=tk.W, pady=5)
 
         # ASIN Input Mode Selection (for single mode)
-        input_mode_label = ttk.Label(main_frame, text="ASIN Input Mode:", font=("Arial", 10))
+        input_mode_label = ttk.Label(main_frame, text="ASIN Input Mode:", font=scaled_font("Arial", 10))
         input_mode_label.grid(row=2, column=0, sticky=tk.W, pady=5)
 
         manual_radio = ttk.Radiobutton(main_frame, text="Manual Input", variable=asin_input_mode, value="manual", command=update_asin_selection)
@@ -450,7 +450,7 @@ class SalesRankAnalyzer:
         select_radio.grid(row=2, column=2, sticky=tk.W, pady=5)
 
         # ASIN Input
-        asin_label = ttk.Label(main_frame, text="ASIN:", font=("Arial", 10))
+        asin_label = ttk.Label(main_frame, text="ASIN:", font=scaled_font("Arial", 10))
         asin_label.grid(row=3, column=0, sticky=tk.W, pady=5)
 
         # Create a frame to hold the ASIN input widgets
@@ -527,13 +527,13 @@ class SalesRankAnalyzer:
         ttk.Button(batch_buttons_frame, text="Load from List", command=load_selected_list).pack(side=tk.LEFT)
 
         # Days Input
-        ttk.Label(main_frame, text="Days to analyze:", font=("Arial", 10)).grid(row=5, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="Days to analyze:", font=scaled_font("Arial", 10)).grid(row=5, column=0, sticky=tk.W, pady=5)
         days_entry = ttk.Entry(main_frame, textvariable=days_var, width=30)
         days_entry.grid(row=5, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
 
         # Help text
         help_text = "Enter number of days to analyze (1-365)"
-        help_label = ttk.Label(main_frame, text=help_text, font=("Arial", 8), foreground="gray")
+        help_label = ttk.Label(main_frame, text=help_text, font=scaled_font("Arial", 8), foreground="gray")
         help_label.grid(row=6, column=0, columnspan=3, pady=(5, 10))
 
         # Export checkbox
@@ -673,13 +673,13 @@ class SalesRankAnalyzer:
             # Center on the same screen as the parent
             center_window_on_parent(progress_window, parent_window, 600, 200)
 
-            progress_label = ttk.Label(progress_window, text="Processing ASINs...", font=("Arial", 12))
+            progress_label = ttk.Label(progress_window, text="Processing ASINs...", font=scaled_font("Arial", 12))
             progress_label.pack(pady=20)
 
             progress_bar = ttk.Progressbar(progress_window, length=300, mode='determinate')
             progress_bar.pack(pady=10)
 
-            status_label = ttk.Label(progress_window, text="", font=("Arial", 10))
+            status_label = ttk.Label(progress_window, text="", font=scaled_font("Arial", 10))
             status_label.pack(pady=10)
 
             progress_bar['maximum'] = len(asins)

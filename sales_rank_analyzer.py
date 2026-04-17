@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext
 import pyautogui
+from window_utils import init_dpi_scaling, scaled_font, center_window_on_parent
 
 # Load API key from .env
 load_dotenv('.env.local')
@@ -206,21 +207,16 @@ def get_user_input():
     Creates a user input window for sales rank analysis.
     Returns tuple of (asin, days, export_csv) or None if cancelled.
     """
-    mouse_x, mouse_y = pyautogui.position()
-    
     # Create the main input window
     root = tk.Tk()
+    init_dpi_scaling(root)
     root.title("Sales Rank Analyzer - Input")
-    root.geometry(f'400x300+{mouse_x}+{mouse_y}')
+    root.resizable(True, True)
+    root.minsize(400, 300)
+    center_window_on_parent(root, None, 450, 350)
     root.lift()
     root.attributes('-topmost', True)
-    root.resizable(False, False)
-    
-    # Center the window on screen
-    root.update_idletasks()
-    x = (root.winfo_screenwidth() // 2) - (400 // 2)
-    y = (root.winfo_screenheight() // 2) - (300 // 2)
-    root.geometry(f'400x300+{x}+{y}')
+    root.after_idle(lambda: root.attributes('-topmost', False))
     
     # Variables to store input values
     asin_var = tk.StringVar()
@@ -273,22 +269,22 @@ def get_user_input():
     main_frame.columnconfigure(1, weight=1)
     
     # Title
-    title_label = ttk.Label(main_frame, text="Sales Rank Analyzer", font=("Arial", 16, "bold"))
+    title_label = ttk.Label(main_frame, text="Sales Rank Analyzer", font=scaled_font("Arial", 16, "bold"))
     title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
     
     # ASIN Input
-    ttk.Label(main_frame, text="ASIN (10 characters):", font=("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
+    ttk.Label(main_frame, text="ASIN (10 characters):", font=scaled_font("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
     asin_entry = ttk.Entry(main_frame, textvariable=asin_var, width=30)
     asin_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
     
     # Days Input
-    ttk.Label(main_frame, text="Days to analyze:", font=("Arial", 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
+    ttk.Label(main_frame, text="Days to analyze:", font=scaled_font("Arial", 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
     days_entry = ttk.Entry(main_frame, textvariable=days_var, width=30)
     days_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
     
     # Help text
     help_text = "Enter number of days to analyze (1-365)"
-    help_label = ttk.Label(main_frame, text=help_text, font=("Arial", 8), foreground="gray")
+    help_label = ttk.Label(main_frame, text=help_text, font=scaled_font("Arial", 8), foreground="gray")
     help_label.grid(row=3, column=0, columnspan=2, pady=(5, 10))
     
     # Export checkbox
@@ -327,12 +323,14 @@ def display_results(asin, stats, sales_rank_df, export_csv=False):
         sales_rank_df (pandas.DataFrame): Full sales rank history
         export_csv (bool): Whether to offer CSV export
     """
-    mouse_x, mouse_y = pyautogui.position()
     result_root = tk.Tk()
-    result_root.geometry(f'800x600+{mouse_x}+{mouse_y}')
+    init_dpi_scaling(result_root)
     result_root.title(f'Sales Rank Analysis - {asin}')
+    result_root.resizable(True, True)
+    center_window_on_parent(result_root, None, 800, 600)
     result_root.lift()
     result_root.attributes('-topmost', True)
+    result_root.after_idle(lambda: result_root.attributes('-topmost', False))
     
     # Create scrolled text widget
     text = scrolledtext.ScrolledText(result_root, wrap=tk.WORD, width=60, height=25)
