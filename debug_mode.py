@@ -17,7 +17,7 @@ import pandas as pd
 from asin_manager import (
     load_saved_asins, load_all_asin_lists, validate_asin, validate_asin_list
 )
-from window_utils import center_window_on_parent
+from window_utils import center_window_on_parent, scaled_font, scaled
 
 
 # Amazon's seller ID constant (used for identifying Amazon as buybox owner)
@@ -449,14 +449,14 @@ class DebugViewer:
         main_frame.columnconfigure(1, weight=1)
         
         # Title
-        title_label = ttk.Label(main_frame, text="Debug Mode", font=("Arial", 18, "bold"))
+        title_label = ttk.Label(main_frame, text="Debug Mode", font=scaled_font("Arial", 18, "bold"))
         title_label.grid(row=0, column=0, columnspan=2, pady=(0, 5))
         
         # Subtitle explaining what debug mode does
         subtitle_label = ttk.Label(
             main_frame, 
             text="View raw API data and processed results for verification",
-            font=("Arial", 9),
+            font=scaled_font("Arial", 9),
             foreground="gray"
         )
         subtitle_label.grid(row=1, column=0, columnspan=2, pady=(0, 20))
@@ -484,7 +484,7 @@ class DebugViewer:
         sales_rank_radio.pack(anchor=tk.W, pady=2)
         
         # ===== ASIN Input Mode Selection =====
-        ttk.Label(main_frame, text="ASIN Input Mode:", font=("Arial", 10)).grid(row=3, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="ASIN Input Mode:", font=scaled_font("Arial", 10)).grid(row=3, column=0, sticky=tk.W, pady=5)
         
         mode_frame = ttk.Frame(main_frame)
         mode_frame.grid(row=3, column=1, sticky=tk.W, pady=5)
@@ -496,7 +496,7 @@ class DebugViewer:
         select_radio.pack(side=tk.LEFT)
         
         # ASIN Input
-        ttk.Label(main_frame, text="ASIN:", font=("Arial", 10)).grid(row=4, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="ASIN:", font=scaled_font("Arial", 10)).grid(row=4, column=0, sticky=tk.W, pady=5)
         
         # Create a frame to hold the ASIN input widgets
         asin_input_frame = ttk.Frame(main_frame)
@@ -515,10 +515,10 @@ class DebugViewer:
         days_frame = ttk.Frame(main_frame)
         days_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
-        ttk.Label(days_frame, text="Days to analyze:", font=("Arial", 10)).pack(side=tk.LEFT)
+        ttk.Label(days_frame, text="Days to analyze:", font=scaled_font("Arial", 10)).pack(side=tk.LEFT)
         days_entry = ttk.Entry(days_frame, textvariable=days_var, width=10)
         days_entry.pack(side=tk.LEFT, padx=(10, 5))
-        ttk.Label(days_frame, text="(1-365)", font=("Arial", 9), foreground="gray").pack(side=tk.LEFT)
+        ttk.Label(days_frame, text="(1-365)", font=scaled_font("Arial", 9), foreground="gray").pack(side=tk.LEFT)
         
         # Initially hide days frame (only shown for sales rank)
         days_frame.grid_remove()
@@ -638,7 +638,7 @@ class DebugViewer:
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Title
-        title_label = ttk.Label(main_frame, text=f"Debug Analysis for ASIN: {asin}", font=("Arial", 14, "bold"))
+        title_label = ttk.Label(main_frame, text=f"Debug Analysis for ASIN: {asin}", font=scaled_font("Arial", 14, "bold"))
         title_label.pack(pady=(0, 10))
         
         # Create notebook (tabbed interface)
@@ -654,14 +654,14 @@ class DebugViewer:
             raw_info = ttk.Label(
                 raw_frame, 
                 text="This is the exact data received from the Keepa API. Use this to verify the API is returning expected data.",
-                font=("Arial", 9),
+                font=scaled_font("Arial", 9),
                 foreground="gray",
                 wraplength=900
             )
             raw_info.pack(anchor=tk.W, pady=(0, 10))
             
             # Create scrolled text widget for raw data
-            raw_text = scrolledtext.ScrolledText(raw_frame, wrap=tk.WORD, width=100, height=30, font=("Consolas", 9))
+            raw_text = scrolledtext.ScrolledText(raw_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 9))
             raw_text.pack(fill=tk.BOTH, expand=True)
             
             # Format and display raw data as pretty JSON
@@ -682,14 +682,14 @@ class DebugViewer:
             processed_info = ttk.Label(
                 processed_frame, 
                 text="This is the transformed data used for buybox calculations. Timestamps are converted from Keepa format to readable dates.",
-                font=("Arial", 9),
+                font=scaled_font("Arial", 9),
                 foreground="gray",
                 wraplength=900
             )
             processed_info.pack(anchor=tk.W, pady=(0, 10))
             
             # Create scrolled text widget for processed data
-            processed_text = scrolledtext.ScrolledText(processed_frame, wrap=tk.WORD, width=100, height=30, font=("Consolas", 9))
+            processed_text = scrolledtext.ScrolledText(processed_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 9))
             processed_text.pack(fill=tk.BOTH, expand=True)
             
             # Format and display processed data
@@ -705,7 +705,7 @@ class DebugViewer:
         summary_frame = ttk.Frame(notebook, padding="15")
         notebook.add(summary_frame, text="Summary")
         
-        summary_text = scrolledtext.ScrolledText(summary_frame, wrap=tk.WORD, width=100, height=30, font=("Consolas", 10))
+        summary_text = scrolledtext.ScrolledText(summary_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 10))
         summary_text.pack(fill=tk.BOTH, expand=True)
         
         # Generate summary
@@ -854,7 +854,7 @@ class DebugViewer:
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Title
-        title_label = ttk.Label(main_frame, text=f"Sales Rank Debug Analysis for ASIN: {asin}", font=("Arial", 14, "bold"))
+        title_label = ttk.Label(main_frame, text=f"Sales Rank Debug Analysis for ASIN: {asin}", font=scaled_font("Arial", 14, "bold"))
         title_label.pack(pady=(0, 10))
         
         # Create notebook (tabbed interface)
@@ -865,7 +865,7 @@ class DebugViewer:
         diag_frame = ttk.Frame(notebook, padding="15")
         notebook.add(diag_frame, text="🔍 Diagnostic Summary")
         
-        diag_text = scrolledtext.ScrolledText(diag_frame, wrap=tk.WORD, width=100, height=30, font=("Consolas", 10))
+        diag_text = scrolledtext.ScrolledText(diag_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 10))
         diag_text.pack(fill=tk.BOTH, expand=True)
         
         # Generate diagnostic summary
@@ -981,14 +981,14 @@ class DebugViewer:
             raw_info = ttk.Label(
                 raw_frame, 
                 text="This is the exact data received from the Keepa API. Look for 'salesRanks' and 'csv' fields.",
-                font=("Arial", 9),
+                font=scaled_font("Arial", 9),
                 foreground="gray",
                 wraplength=900
             )
             raw_info.pack(anchor=tk.W, pady=(0, 10))
             
             # Create scrolled text widget for raw data
-            raw_text = scrolledtext.ScrolledText(raw_frame, wrap=tk.WORD, width=100, height=30, font=("Consolas", 9))
+            raw_text = scrolledtext.ScrolledText(raw_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 9))
             raw_text.pack(fill=tk.BOTH, expand=True)
             
             # Format and display raw data as pretty JSON
@@ -1009,14 +1009,14 @@ class DebugViewer:
             processed_info = ttk.Label(
                 processed_frame, 
                 text="This shows how the raw data is transformed for analysis. Check records counts and date ranges.",
-                font=("Arial", 9),
+                font=scaled_font("Arial", 9),
                 foreground="gray",
                 wraplength=900
             )
             processed_info.pack(anchor=tk.W, pady=(0, 10))
             
             # Create scrolled text widget for processed data
-            processed_text = scrolledtext.ScrolledText(processed_frame, wrap=tk.WORD, width=100, height=30, font=("Consolas", 9))
+            processed_text = scrolledtext.ScrolledText(processed_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 9))
             processed_text.pack(fill=tk.BOTH, expand=True)
             
             # Format and display processed data
@@ -1033,7 +1033,7 @@ class DebugViewer:
             sample_frame = ttk.Frame(notebook, padding="15")
             notebook.add(sample_frame, text="📋 Sample Data")
             
-            sample_text = scrolledtext.ScrolledText(sample_frame, wrap=tk.WORD, width=100, height=30, font=("Consolas", 10))
+            sample_text = scrolledtext.ScrolledText(sample_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 10))
             sample_text.pack(fill=tk.BOTH, expand=True)
             
             sample_lines = []
@@ -1154,7 +1154,7 @@ class DebugViewer:
             
             # Show appropriate loading message based on debug type
             data_type = "sales rank" if debug_type == "sales_rank" else "buybox"
-            ttk.Label(loading_window, text=f"Fetching {data_type} data for ASIN: {asin}...", font=("Arial", 10)).pack(expand=True)
+            ttk.Label(loading_window, text=f"Fetching {data_type} data for ASIN: {asin}...", font=scaled_font("Arial", 10)).pack(expand=True)
             loading_window.update()
         
         # Fetch data based on debug type

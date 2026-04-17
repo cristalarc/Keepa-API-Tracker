@@ -12,7 +12,7 @@ import pandas as pd
 import requests
 
 from asin_manager import load_all_asin_lists
-from window_utils import center_window_on_parent
+from window_utils import center_window_on_parent, scaled_font, scaled
 
 
 class PriceHistoryStore:
@@ -311,7 +311,7 @@ class CompetitorPriceTracker:
         header_label = ttk.Label(
             container,
             text="Competitor ASIN Price Tracker",
-            font=("Arial", 18, "bold"),
+            font=scaled_font("Arial", 18, "bold"),
         )
         header_label.pack(anchor=tk.W, pady=(0, 10))
 
@@ -423,13 +423,13 @@ class CompetitorPriceTracker:
         self.results_tree.heading("change", text="Change")
         self.results_tree.heading("tracked_at", text="Last Tracked")
 
-        self.results_tree.column("list_name", width=170, anchor=tk.W)
-        self.results_tree.column("asin", width=120, anchor=tk.W)
-        self.results_tree.column("title", width=340, anchor=tk.W)
-        self.results_tree.column("current_price", width=110, anchor=tk.E)
-        self.results_tree.column("previous_price", width=110, anchor=tk.E)
-        self.results_tree.column("change", width=100, anchor=tk.E)
-        self.results_tree.column("tracked_at", width=160, anchor=tk.W)
+        self.results_tree.column("list_name", width=scaled(170), anchor=tk.W)
+        self.results_tree.column("asin", width=scaled(120), anchor=tk.W)
+        self.results_tree.column("title", width=scaled(340), anchor=tk.W)
+        self.results_tree.column("current_price", width=scaled(110), anchor=tk.E)
+        self.results_tree.column("previous_price", width=scaled(110), anchor=tk.E)
+        self.results_tree.column("change", width=scaled(100), anchor=tk.E)
+        self.results_tree.column("tracked_at", width=scaled(160), anchor=tk.W)
 
         results_scrollbar = ttk.Scrollbar(results_frame, orient=tk.VERTICAL, command=self.results_tree.yview)
         self.results_tree.configure(yscrollcommand=results_scrollbar.set)
@@ -457,9 +457,9 @@ class CompetitorPriceTracker:
         self.history_tree.heading("tracked_at", text="Tracked At")
         self.history_tree.heading("price", text="Price")
         self.history_tree.heading("title", text="Product Title")
-        self.history_tree.column("tracked_at", width=180, anchor=tk.W)
-        self.history_tree.column("price", width=120, anchor=tk.E)
-        self.history_tree.column("title", width=760, anchor=tk.W)
+        self.history_tree.column("tracked_at", width=scaled(180), anchor=tk.W)
+        self.history_tree.column("price", width=scaled(120), anchor=tk.E)
+        self.history_tree.column("title", width=scaled(760), anchor=tk.W)
 
         history_scrollbar = ttk.Scrollbar(details_frame, orient=tk.VERTICAL, command=self.history_tree.yview)
         self.history_tree.configure(yscrollcommand=history_scrollbar.set)
@@ -840,7 +840,7 @@ class CompetitorPriceTracker:
 
         title_text = self.selected_title or history[-1]["title"]
         header = f"{self.selected_asin} | {title_text[:90]}"
-        self.chart_canvas.create_text(14, 10, text=header, anchor=tk.NW, fill="#222222", font=("Arial", 10, "bold"))
+        self.chart_canvas.create_text(14, 10, text=header, anchor=tk.NW, fill="#222222", font=scaled_font("Arial", 10, "bold"))
 
         left_margin = 70
         right_margin = 20
@@ -895,7 +895,7 @@ class CompetitorPriceTracker:
                 text=f"${price_tick:.2f}",
                 anchor=tk.E,
                 fill="#444444",
-                font=("Arial", 8),
+                font=scaled_font("Arial", 8),
             )
 
         x_tick_indices = sorted(set([0, len(history) // 2, len(history) - 1]))
@@ -910,7 +910,7 @@ class CompetitorPriceTracker:
                 text=label,
                 anchor=tk.N,
                 fill="#444444",
-                font=("Arial", 8),
+                font=scaled_font("Arial", 8),
             )
 
         points = []

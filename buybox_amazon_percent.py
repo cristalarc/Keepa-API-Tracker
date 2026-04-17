@@ -140,27 +140,23 @@ import tkinter as tk
 import pyautogui
 from screeninfo import get_monitors
 from tkinter import simpledialog, messagebox, filedialog, ttk
+from window_utils import init_dpi_scaling, scaled_font, scaled, center_window_on_parent
 
 def get_user_input():
     """
     Creates a single consolidated input window for ASIN, year, and months.
     Returns tuple of (asin, year, months, export_preference) with all validation intact.
     """
-    mouse_x, mouse_y = pyautogui.position()
-    
     # Create the main input window
     root = tk.Tk()
+    init_dpi_scaling(root)
     root.title("Keepa API Tracker - Input")
-    root.geometry(f'500x500+{mouse_x}+{mouse_y}')
+    root.resizable(True, True)
+    root.minsize(600, 600)
+    center_window_on_parent(root, None, 650, 650)
     root.lift()
     root.attributes('-topmost', True)
-    root.resizable(False, False)
-    
-    # Center the window on screen
-    root.update_idletasks()
-    x = (root.winfo_screenwidth() // 2) - (600 // 2)
-    y = (root.winfo_screenheight() // 2) - (600 // 2)
-    root.geometry(f'600x600+{x}+{y}')
+    root.after_idle(lambda: root.attributes('-topmost', False))
     
     # Variables to store input values
     asin_var = tk.StringVar()
@@ -190,7 +186,7 @@ def get_user_input():
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # Title
-        ttk.Label(main_frame, text="ASIN Manager", font=("Arial", 16, "bold")).pack(pady=(0, 20))
+        ttk.Label(main_frame, text="ASIN Manager", font=scaled_font("Arial", 16, "bold")).pack(pady=(0, 20))
         
         # Create notebook for tabs
         notebook = ttk.Notebook(main_frame)
@@ -278,7 +274,7 @@ def get_user_input():
         
         for col in columns:
             lists_tree.heading(col, text=col)
-            lists_tree.column(col, width=150)
+            lists_tree.column(col, width=scaled(150))
         
         lists_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
@@ -562,11 +558,11 @@ def get_user_input():
     main_frame.columnconfigure(2, weight=1)
     
     # Title
-    title_label = ttk.Label(main_frame, text="Keepa API Tracker", font=("Arial", 16, "bold"))
+    title_label = ttk.Label(main_frame, text="Keepa API Tracker", font=scaled_font("Arial", 16, "bold"))
     title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
     
     # Processing Mode Selection
-    ttk.Label(main_frame, text="Processing Mode:", font=("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
+    ttk.Label(main_frame, text="Processing Mode:", font=scaled_font("Arial", 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
     
     single_mode_radio = ttk.Radiobutton(main_frame, text="Single ASIN", variable=batch_mode_var, value=False, command=update_batch_mode)
     single_mode_radio.grid(row=1, column=1, sticky=tk.W, pady=5)
@@ -575,7 +571,7 @@ def get_user_input():
     batch_mode_radio.grid(row=1, column=2, sticky=tk.W, pady=5)
     
     # ASIN Input Mode Selection (for single mode)
-    ttk.Label(main_frame, text="ASIN Input Mode:", font=("Arial", 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
+    ttk.Label(main_frame, text="ASIN Input Mode:", font=scaled_font("Arial", 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
     
     manual_radio = ttk.Radiobutton(main_frame, text="Manual Input", variable=asin_input_mode, value="manual", command=update_asin_selection)
     manual_radio.grid(row=2, column=1, sticky=tk.W, pady=5)
@@ -584,7 +580,7 @@ def get_user_input():
     select_radio.grid(row=2, column=2, sticky=tk.W, pady=5)
     
     # ASIN Input
-    asin_label = ttk.Label(main_frame, text="ASIN:", font=("Arial", 10))
+    asin_label = ttk.Label(main_frame, text="ASIN:", font=scaled_font("Arial", 10))
     asin_label.grid(row=3, column=0, sticky=tk.W, pady=5)
     
     # Create a frame to hold the ASIN input widgets
@@ -665,18 +661,18 @@ def get_user_input():
     ttk.Button(batch_buttons_frame, text="Load from List", command=load_selected_list).pack(side=tk.LEFT)
     
     # Year Input
-    ttk.Label(main_frame, text="Year:", font=("Arial", 10)).grid(row=5, column=0, sticky=tk.W, pady=5)
+    ttk.Label(main_frame, text="Year:", font=scaled_font("Arial", 10)).grid(row=5, column=0, sticky=tk.W, pady=5)
     year_entry = ttk.Entry(main_frame, textvariable=year_var, width=30)
     year_entry.grid(row=5, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
     
     # Months Input
-    ttk.Label(main_frame, text="Months (comma-separated):", font=("Arial", 10)).grid(row=6, column=0, sticky=tk.W, pady=5)
+    ttk.Label(main_frame, text="Months (comma-separated):", font=scaled_font("Arial", 10)).grid(row=6, column=0, sticky=tk.W, pady=5)
     months_entry = ttk.Entry(main_frame, textvariable=months_var, width=30)
     months_entry.grid(row=6, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
     
     # Help text
     help_text = "Example: 1,2,3 for January, February, March"
-    help_label = ttk.Label(main_frame, text=help_text, font=("Arial", 8), foreground="gray")
+    help_label = ttk.Label(main_frame, text=help_text, font=scaled_font("Arial", 8), foreground="gray")
     help_label.grid(row=7, column=0, columnspan=3, pady=(5, 10))
     
     # Export checkbox
@@ -820,24 +816,19 @@ else:
     
               # Create progress window
     progress_window = tk.Tk()
+    init_dpi_scaling(progress_window)
     progress_window.title("Processing ASINs")
-    progress_window.geometry("600x200")
     progress_window.lift()
     progress_window.attributes('-topmost', True)
-     
-    # Center the progress window
-    progress_window.update_idletasks()
-    progress_x = (progress_window.winfo_screenwidth() // 2) - (600 // 2)
-    progress_y = (progress_window.winfo_screenheight() // 2) - (200 // 2)
-    progress_window.geometry(f'600x200+{progress_x}+{progress_y}')
+    center_window_on_parent(progress_window, None, 600, 200)
     
-    progress_label = ttk.Label(progress_window, text="Processing ASINs...", font=("Arial", 12))
+    progress_label = ttk.Label(progress_window, text="Processing ASINs...", font=scaled_font("Arial", 12))
     progress_label.pack(pady=20)
     
     progress_bar = ttk.Progressbar(progress_window, length=300, mode='determinate')
     progress_bar.pack(pady=10)
     
-    status_label = ttk.Label(progress_window, text="", font=("Arial", 10))
+    status_label = ttk.Label(progress_window, text="", font=scaled_font("Arial", 10))
     status_label.pack(pady=10)
     
     progress_bar['maximum'] = len(ASINS)
@@ -866,12 +857,14 @@ else:
         print("All ASINs processed successfully!")
 
 # Show results in a dedicated tkinter window
-mouse_x, mouse_y = pyautogui.position()
 result_root = tk.Tk()
-result_root.geometry(f'1200x800+{mouse_x}+{mouse_y}')
+init_dpi_scaling(result_root)
 result_root.title('Buybox Analysis Results')
+result_root.resizable(True, True)
+center_window_on_parent(result_root, None, 1200, 800)
 result_root.lift()
 result_root.attributes('-topmost', True)
+result_root.after_idle(lambda: result_root.attributes('-topmost', False))
 
 from tkinter import scrolledtext
 text = scrolledtext.ScrolledText(result_root, wrap=tk.WORD, width=80, height=30)
