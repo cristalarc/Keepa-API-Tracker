@@ -66,6 +66,18 @@ def scaled_font(family, size, weight=""):
     return (family, scaled_size)
 
 
+def _get_max_window_bounds(window):
+    """
+    Compute safe max window bounds for reliable first-open visibility.
+    Caps prevent oversized windows from pushing action buttons below the viewport.
+    """
+    screen_width = window.winfo_screenwidth()
+    screen_height = window.winfo_screenheight()
+    max_width = max(320, min(int(screen_width * 0.94), scaled(1280)))
+    max_height = max(240, min(int(screen_height * 0.88), scaled(760)))
+    return max_width, max_height
+
+
 def _normalize_window_size(window, width, height):
     """
     Normalize a requested window size so it:
@@ -80,18 +92,20 @@ def _normalize_window_size(window, width, height):
     scaled_width = scaled(requested_width)
     scaled_height = scaled(requested_height)
 
+    max_width, max_height = _get_max_window_bounds(window)
+
     min_width, min_height = window.minsize()
     min_width = max(1, int(min_width))
     min_height = max(1, int(min_height))
 
-    normalized_width = max(scaled_width, min_width)
-    normalized_height = max(scaled_height, min_height)
+    # Protect against oversized hard-coded mins that can hide bottom controls.
+    safe_min_width = min(min_width, max_width)
+    safe_min_height = min(min_height, max_height)
+    if safe_min_width != min_width or safe_min_height != min_height:
+        window.minsize(safe_min_width, safe_min_height)
 
-    screen_width = window.winfo_screenwidth()
-    screen_height = window.winfo_screenheight()
-    max_width = max(320, int(screen_width * 0.96))
-    max_height = max(240, int(screen_height * 0.92))
-
+    normalized_width = max(scaled_width, safe_min_width)
+    normalized_height = max(scaled_height, safe_min_height)
     normalized_width = min(normalized_width, max_width)
     normalized_height = min(normalized_height, max_height)
 
@@ -123,8 +137,7 @@ def _expand_window_to_fit_content(window):
 
     screen_width = window.winfo_screenwidth()
     screen_height = window.winfo_screenheight()
-    max_width = max(320, int(screen_width * 0.96))
-    max_height = max(240, int(screen_height * 0.92))
+    max_width, max_height = _get_max_window_bounds(window)
 
     target_width = min(target_width, max_width)
     target_height = min(target_height, max_height)
@@ -164,18 +177,14 @@ def center_window_on_parent(window, parent, width, height):
         x = parent_x + (parent_w - width) // 2
         y = parent_y + (parent_h - height) // 2
     else:
-        # No parent - try to center at mouse position so the window
-        # appears on whichever monitor the user is currently using.
-        try:
-            import pyautogui
-            mouse_x, mouse_y = pyautogui.position()
-            x = mouse_x - (width // 2)
-            y = mouse_y - (height // 2)
-        except Exception:
-            # Fallback to screen center
-            screen_w = window.winfo_screenwidth()
-            screen_h = window.winfo_screenheight()
-            x = (screen_w - width) // 2
+        # Top-biased centering for root windows keeps bottom action buttons
+        # visible on first open in shorter desktop viewports.
+        screen_w = window.winfo_screenwidth()
+        screen_h = window.winfo_screenheight()
+        x = (screen_w - width) // 2
+        if height >= scaled(500):
+            y = min((screen_h - height) // 2, scaled(24))
+        else:
             y = (screen_h - height) // 2
 
     # Keep the full window within visible screen bounds.
@@ -185,4 +194,3 @@ def center_window_on_parent(window, parent, width, height):
     y = max(0, min(y, screen_h - height))
 
     window.geometry(f'{width}x{height}+{x}+{y}')
-    window.after_idle(lambda: _expand_window_to_fit_content(window))
