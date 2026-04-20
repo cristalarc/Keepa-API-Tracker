@@ -137,8 +137,6 @@ def add_asins_to_saved_list(new_asins, list_name="Default List"):
 
 # --- Get user input via consolidated popup ---
 import tkinter as tk
-import pyautogui
-from screeninfo import get_monitors
 from tkinter import simpledialog, messagebox, filedialog, ttk
 from window_utils import init_dpi_scaling, scaled_font, scaled, center_window_on_parent
 
@@ -174,7 +172,9 @@ def get_user_input():
         """Open ASIN management window"""
         manager_window = tk.Toplevel(root)
         manager_window.title("ASIN Manager")
-        manager_window.geometry("800x600")
+        manager_window.resizable(True, True)
+        manager_window.minsize(800, 600)
+        center_window_on_parent(manager_window, root, 900, 700)
         manager_window.transient(root)
         manager_window.grab_set()
         
@@ -451,16 +451,16 @@ def get_user_input():
             asin_label.grid_remove()
             asin_input_frame.grid_remove()
             asin_manager_button.grid_remove()
-            # Increase window height for batch mode
-            root.geometry(f'600x700+{x}+{y}')
+            # Increase window height so action buttons stay visible without manual resize.
+            center_window_on_parent(root, None, 700, 760)
         else:
             # Single mode: hide batch input, show single ASIN input
             batch_frame.grid_remove()
             asin_label.grid()
             asin_input_frame.grid()
             asin_manager_button.grid()
-            # Reset window height for single mode
-            root.geometry(f'600x600+{x}+{y}')
+            # Reset to compact layout while keeping controls visible.
+            center_window_on_parent(root, None, 650, 650)
     
     # Validation function
     def validate_inputs():
@@ -631,15 +631,11 @@ def get_user_input():
         # Create a simple dialog to select list
         list_window = tk.Toplevel(root)
         list_window.title("Select List")
-        list_window.geometry("300x200")
+        list_window.resizable(True, True)
+        list_window.minsize(320, 220)
         list_window.transient(root)
         list_window.grab_set()
-        
-        # Center the list selection window
-        list_window.update_idletasks()
-        list_x = (list_window.winfo_screenwidth() // 2) - (300 // 2)
-        list_y = (list_window.winfo_screenheight() // 2) - (200 // 2)
-        list_window.geometry(f'300x200+{list_x}+{list_y}')
+        center_window_on_parent(list_window, root, 360, 260)
         
         ttk.Label(list_window, text="Select a list to load:").pack(pady=10)
         

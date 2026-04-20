@@ -57,10 +57,11 @@ class KeepaTrackerApp:
         init_dpi_scaling(self.root)
         self.root.title("Keepa API Tracker")
         self.root.resizable(True, True)
-        self.root.minsize(480, 720)
+        # Keep a moderate minimum so all menu actions remain visible on smaller displays.
+        self.root.minsize(480, 640)
 
         # Center the window on the monitor where the mouse currently is
-        center_window_on_parent(self.root, None, 520, 800)
+        center_window_on_parent(self.root, None, 520, 740)
         
         # Make window stay on top initially, then allow normal behavior
         self.root.lift()
@@ -68,7 +69,7 @@ class KeepaTrackerApp:
         self.root.after_idle(lambda: self.root.attributes('-topmost', False))
         
         # Create main frame
-        main_frame = ttk.Frame(self.root, padding="30")
+        main_frame = ttk.Frame(self.root, padding="16")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # Title
@@ -77,7 +78,7 @@ class KeepaTrackerApp:
             text="Keepa API Tracker", 
             font=scaled_font("Arial", 24, "bold")
         )
-        title_label.pack(pady=(0, 30))
+        title_label.pack(pady=(0, 16))
         
         # Subtitle
         subtitle_label = ttk.Label(
@@ -85,11 +86,11 @@ class KeepaTrackerApp:
             text="Select an analysis tool:", 
             font=scaled_font("Arial", 12)
         )
-        subtitle_label.pack(pady=(0, 20))
+        subtitle_label.pack(pady=(0, 10))
         
         # Create button frame
         button_frame = ttk.Frame(main_frame)
-        button_frame.pack(pady=20)
+        button_frame.pack(pady=8)
         
         # Buybox Analyzer Button
         buybox_btn = ttk.Button(
@@ -99,7 +100,7 @@ class KeepaTrackerApp:
             width=25,
             style="Accent.TButton"
         )
-        buybox_btn.pack(pady=10)
+        buybox_btn.pack(pady=4)
         
         # Add tooltip/description for buybox analyzer
         buybox_desc = ttk.Label(
@@ -108,7 +109,7 @@ class KeepaTrackerApp:
             font=scaled_font("Arial", 9),
             foreground="gray"
         )
-        buybox_desc.pack(pady=(0, 10))
+        buybox_desc.pack(pady=(0, 4))
 
         # Current Buybox Owners Button
         current_owners_btn = ttk.Button(
@@ -117,7 +118,7 @@ class KeepaTrackerApp:
             command=self.run_current_buybox_owners,
             width=25
         )
-        current_owners_btn.pack(pady=10)
+        current_owners_btn.pack(pady=4)
 
         # Add tooltip/description for current owners
         current_owners_desc = ttk.Label(
@@ -126,7 +127,7 @@ class KeepaTrackerApp:
             font=scaled_font("Arial", 9),
             foreground="gray"
         )
-        current_owners_desc.pack(pady=(0, 10))
+        current_owners_desc.pack(pady=(0, 4))
 
         # Sales Rank Analyzer Button
         sales_rank_btn = ttk.Button(
@@ -135,7 +136,7 @@ class KeepaTrackerApp:
             command=self.run_sales_rank_analyzer,
             width=25
         )
-        sales_rank_btn.pack(pady=10)
+        sales_rank_btn.pack(pady=4)
         
         # Add tooltip/description for sales rank analyzer
         sales_rank_desc = ttk.Label(
@@ -144,7 +145,7 @@ class KeepaTrackerApp:
             font=scaled_font("Arial", 9),
             foreground="gray"
         )
-        sales_rank_desc.pack(pady=(0, 10))
+        sales_rank_desc.pack(pady=(0, 4))
 
         # Competitor Price Tracker Button
         competitor_price_btn = ttk.Button(
@@ -153,7 +154,7 @@ class KeepaTrackerApp:
             command=self.run_competitor_price_tracker,
             width=25
         )
-        competitor_price_btn.pack(pady=10)
+        competitor_price_btn.pack(pady=4)
 
         # Add tooltip/description for competitor price tracker
         competitor_price_desc = ttk.Label(
@@ -162,7 +163,7 @@ class KeepaTrackerApp:
             font=scaled_font("Arial", 9),
             foreground="gray"
         )
-        competitor_price_desc.pack(pady=(0, 10))
+        competitor_price_desc.pack(pady=(0, 4))
 
         # Delivery Speed by ZIP Button
         delivery_speed_btn = ttk.Button(
@@ -171,7 +172,7 @@ class KeepaTrackerApp:
             command=self.run_delivery_speed_tracker,
             width=25
         )
-        delivery_speed_btn.pack(pady=10)
+        delivery_speed_btn.pack(pady=4)
 
         # Add tooltip/description for delivery speed tracker
         delivery_speed_desc = ttk.Label(
@@ -180,7 +181,7 @@ class KeepaTrackerApp:
             font=scaled_font("Arial", 9),
             foreground="gray"
         )
-        delivery_speed_desc.pack(pady=(0, 10))
+        delivery_speed_desc.pack(pady=(0, 4))
 
         # ASIN Manager Button
         asin_manager_btn = ttk.Button(
@@ -189,7 +190,7 @@ class KeepaTrackerApp:
             command=self.run_asin_manager,
             width=25
         )
-        asin_manager_btn.pack(pady=10)
+        asin_manager_btn.pack(pady=4)
 
         # Add tooltip/description for ASIN manager
         asin_manager_desc = ttk.Label(
@@ -198,10 +199,10 @@ class KeepaTrackerApp:
             font=scaled_font("Arial", 9),
             foreground="gray"
         )
-        asin_manager_desc.pack(pady=(0, 10))
+        asin_manager_desc.pack(pady=(0, 4))
 
         # Separator for Debug Mode section
-        ttk.Separator(button_frame, orient='horizontal').pack(fill=tk.X, pady=10)
+        ttk.Separator(button_frame, orient='horizontal').pack(fill=tk.X, pady=6)
 
         # Debug Mode Button
         debug_mode_btn = ttk.Button(
@@ -210,7 +211,7 @@ class KeepaTrackerApp:
             command=self.run_debug_mode,
             width=25
         )
-        debug_mode_btn.pack(pady=10)
+        debug_mode_btn.pack(pady=4)
 
         # Add tooltip/description for debug mode
         debug_mode_desc = ttk.Label(
@@ -219,7 +220,7 @@ class KeepaTrackerApp:
             font=scaled_font("Arial", 9),
             foreground="gray"
         )
-        debug_mode_desc.pack(pady=(0, 10))
+        debug_mode_desc.pack(pady=(0, 4))
 
         # Exit Button
         exit_btn = ttk.Button(
@@ -228,7 +229,7 @@ class KeepaTrackerApp:
             command=self.exit_application,
             width=25
         )
-        exit_btn.pack(pady=(20, 0))
+        exit_btn.pack(pady=(10, 0))
         
         # Add footer
         footer_label = ttk.Label(
@@ -237,7 +238,7 @@ class KeepaTrackerApp:
             font=scaled_font("Arial", 8),
             foreground="gray"
         )
-        footer_label.pack(side=tk.BOTTOM, pady=(20, 0))
+        footer_label.pack(side=tk.BOTTOM, pady=(8, 0))
     
     def run_buybox_analyzer(self):
         """
@@ -420,11 +421,11 @@ class KeepaTrackerApp:
             lists_data = load_all_asin_lists()
 
             # Create main frame
-            main_frame = ttk.Frame(manager_window, padding="20")
+            main_frame = ttk.Frame(manager_window, padding="12")
             main_frame.pack(fill=tk.BOTH, expand=True)
 
             # Title
-            ttk.Label(main_frame, text="ASIN Manager", font=scaled_font("Arial", 18, "bold")).pack(pady=(0, 20))
+            ttk.Label(main_frame, text="ASIN Manager", font=scaled_font("Arial", 18, "bold")).pack(pady=(0, 10))
 
             # Create notebook for tabs
             notebook = ttk.Notebook(main_frame)
@@ -471,7 +472,7 @@ class KeepaTrackerApp:
 
             ttk.Label(add_asins_frame, text="Paste ASINs (comma, space, or newline separated):").pack(anchor=tk.W)
 
-            asin_text = tk.Text(add_asins_frame, height=10, width=70)
+            asin_text = tk.Text(add_asins_frame, height=7, width=70)
             asin_text.pack(fill=tk.BOTH, expand=True, pady=(5, 10))
 
             def add_asins():
@@ -506,7 +507,7 @@ class KeepaTrackerApp:
 
             # Create treeview for lists
             columns = ('List Name', 'ASIN Count', 'Description')
-            lists_tree = ttk.Treeview(lists_frame, columns=columns, show='headings', height=20)
+            lists_tree = ttk.Treeview(lists_frame, columns=columns, show='headings', height=12)
 
             for col in columns:
                 lists_tree.heading(col, text=col)
@@ -778,7 +779,7 @@ class KeepaTrackerApp:
             edit_listbox_frame = ttk.Frame(edit_asins_frame)
             edit_listbox_frame.pack(fill=tk.BOTH, expand=True)
 
-            edit_asin_listbox = tk.Listbox(edit_listbox_frame, selectmode=tk.EXTENDED, height=20)
+            edit_asin_listbox = tk.Listbox(edit_listbox_frame, selectmode=tk.EXTENDED, height=12)
             edit_asin_scrollbar = ttk.Scrollbar(edit_listbox_frame, orient=tk.VERTICAL, command=edit_asin_listbox.yview)
             edit_asin_listbox.configure(yscrollcommand=edit_asin_scrollbar.set)
 
@@ -903,7 +904,7 @@ class KeepaTrackerApp:
             asin_listbox_frame = ttk.Frame(all_asins_frame)
             asin_listbox_frame.pack(fill=tk.BOTH, expand=True)
 
-            asin_listbox = tk.Listbox(asin_listbox_frame, selectmode=tk.SINGLE, height=25)
+            asin_listbox = tk.Listbox(asin_listbox_frame, selectmode=tk.SINGLE, height=12)
             asin_scrollbar = ttk.Scrollbar(asin_listbox_frame, orient=tk.VERTICAL, command=asin_listbox.yview)
             asin_listbox.configure(yscrollcommand=asin_scrollbar.set)
 
@@ -975,7 +976,7 @@ class KeepaTrackerApp:
             refresh_all_lists()
 
             # Close button
-            ttk.Button(main_frame, text="Close", command=manager_window.destroy).pack(pady=(20, 0))
+            ttk.Button(main_frame, text="Close", command=manager_window.destroy).pack(pady=(12, 0))
 
             # Wait for window to close
             manager_window.wait_window()

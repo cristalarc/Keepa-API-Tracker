@@ -831,10 +831,13 @@ class DeliverySpeedTracker:
         root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
         root.title("Delivery Speed by ZIP - Input")
         root.resizable(True, True)
-        root.minsize(760, 700)
-
-        # Center the window on the same screen as the parent
-        center_window_on_parent(root, parent_window, 820, 760)
+        # Keep a compact default size so bottom action buttons are visible on open.
+        root.minsize(860, 700)
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        default_width = min(int(screen_width * 0.8), 1180)
+        default_height = min(int(screen_height * 0.84), 900)
+        center_window_on_parent(root, parent_window, default_width, default_height)
 
         root.lift()
         root.attributes("-topmost", True)
@@ -1113,7 +1116,18 @@ class DeliverySpeedTracker:
             ),
             foreground="gray",
         )
-        subtitle.pack(anchor=tk.W, pady=(0, 14))
+        subtitle.pack(anchor=tk.W, pady=(0, 10))
+
+        # Keep primary actions near the top so they are visible even on shorter displays.
+        top_action_frame = ttk.Frame(main_frame)
+        top_action_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Button(top_action_frame, text="Run", command=submit, style="Accent.TButton").pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(top_action_frame, text="Cancel", command=cancel).pack(side=tk.LEFT)
+        ttk.Button(
+            top_action_frame,
+            text="View History",
+            command=lambda: self.open_history_viewer(parent_window=root),
+        ).pack(side=tk.LEFT, padx=(8, 0))
 
         asin_frame = ttk.LabelFrame(main_frame, text="ASINs", padding="10")
         asin_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
@@ -1123,7 +1137,7 @@ class DeliverySpeedTracker:
         ttk.Button(asin_btns, text="Load All Saved ASINs", command=load_all_saved_asins).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(asin_btns, text="Load from List", command=load_asins_from_list).pack(side=tk.LEFT)
 
-        asin_text = tk.Text(asin_frame, height=9)
+        asin_text = tk.Text(asin_frame, height=7)
         asin_text.pack(fill=tk.BOTH, expand=True)
         asin_text.insert("1.0", asins_var.get())
 
@@ -1148,7 +1162,7 @@ class DeliverySpeedTracker:
 
         zip_help = ttk.Label(zip_frame, text="Enter 5-digit ZIPs separated by comma, space, or newline.")
         zip_help.pack(anchor=tk.W, pady=(0, 5))
-        zip_text = tk.Text(zip_frame, height=6)
+        zip_text = tk.Text(zip_frame, height=5)
         zip_text.pack(fill=tk.BOTH, expand=True)
         zip_text.insert("1.0", zips_var.get())
         refresh_saved_zip_lists()
@@ -1179,17 +1193,7 @@ class DeliverySpeedTracker:
         ttk.Label(settings_grid, text="Optional Proxy URL:").grid(row=3, column=0, sticky=tk.W, padx=(0, 6), pady=4)
         ttk.Entry(settings_grid, textvariable=proxy_var).grid(row=3, column=1, columnspan=3, sticky=(tk.W, tk.E), pady=4)
 
-        ttk.Checkbutton(main_frame, text="Export current run results to CSV", variable=export_var).pack(anchor=tk.W, pady=(0, 12))
-
-        action_frame = ttk.Frame(main_frame)
-        action_frame.pack(fill=tk.X)
-        ttk.Button(action_frame, text="Run", command=submit, style="Accent.TButton").pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(action_frame, text="Cancel", command=cancel).pack(side=tk.LEFT)
-        ttk.Button(
-            action_frame,
-            text="View History",
-            command=lambda: self.open_history_viewer(parent_window=root),
-        ).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Checkbutton(main_frame, text="Export current run results to CSV", variable=export_var).pack(anchor=tk.W, pady=(0, 6))
 
         # Keyboard shortcuts make submission accessible on smaller displays.
         root.bind("<Return>", lambda _e: submit())
