@@ -957,20 +957,38 @@ class BuyboxAnalyzer:
             # Create progress window
             progress_window = tk.Toplevel(parent_window) if parent_window else tk.Tk()
             progress_window.title("Processing ASINs")
+            progress_window.resizable(False, False)
             progress_window.lift()
             progress_window.attributes('-topmost', True)
+            progress_window.minsize(760, 260)
 
             # Center on the same screen as the parent
-            center_window_on_parent(progress_window, parent_window, 600, 200)
+            center_window_on_parent(progress_window, parent_window, 760, 260)
 
-            progress_label = ttk.Label(progress_window, text="Processing ASINs...", font=scaled_font("Arial", 12))
-            progress_label.pack(pady=20)
+            progress_frame = ttk.Frame(progress_window, padding="12")
+            progress_frame.pack(fill=tk.BOTH, expand=True)
 
-            progress_bar = ttk.Progressbar(progress_window, length=300, mode='determinate')
-            progress_bar.pack(pady=10)
+            progress_label = ttk.Label(
+                progress_frame,
+                text="Processing ASINs...",
+                font=scaled_font("Arial", 12),
+                wraplength=scaled(700),
+                justify=tk.CENTER
+            )
+            progress_label.pack(pady=(8, 12))
 
-            status_label = ttk.Label(progress_window, text="", font=scaled_font("Arial", 10))
-            status_label.pack(pady=10)
+            progress_bar = ttk.Progressbar(progress_frame, length=scaled(560), mode='determinate')
+            progress_bar.pack(fill=tk.X, pady=(0, 10))
+
+            status_label = ttk.Label(
+                progress_frame,
+                text="",
+                font=scaled_font("Arial", 10),
+                wraplength=scaled(700),
+                justify=tk.LEFT,
+                anchor=tk.W
+            )
+            status_label.pack(fill=tk.X)
 
             progress_bar['maximum'] = len(asins)
 
@@ -1636,20 +1654,38 @@ class BuyboxAnalyzer:
             # Create progress window
             progress_window = tk.Toplevel(parent_window) if parent_window else tk.Tk()
             progress_window.title("Processing ASINs")
+            progress_window.resizable(False, False)
             progress_window.lift()
             progress_window.attributes('-topmost', True)
+            progress_window.minsize(800, 280)
 
             # Center on the same screen as the parent
-            center_window_on_parent(progress_window, parent_window, 600, 200)
+            center_window_on_parent(progress_window, parent_window, 800, 280)
 
-            progress_label = ttk.Label(progress_window, text="Fetching current buybox owners...", font=scaled_font("Arial", 12))
-            progress_label.pack(pady=20)
+            progress_frame = ttk.Frame(progress_window, padding="12")
+            progress_frame.pack(fill=tk.BOTH, expand=True)
 
-            progress_bar = ttk.Progressbar(progress_window, length=300, mode='determinate')
-            progress_bar.pack(pady=10)
+            progress_label = ttk.Label(
+                progress_frame,
+                text="Fetching current buybox owners...",
+                font=scaled_font("Arial", 12),
+                wraplength=scaled(740),
+                justify=tk.CENTER
+            )
+            progress_label.pack(pady=(8, 12))
 
-            status_label = ttk.Label(progress_window, text="", font=scaled_font("Arial", 10))
-            status_label.pack(pady=10)
+            progress_bar = ttk.Progressbar(progress_frame, length=scaled(600), mode='determinate')
+            progress_bar.pack(fill=tk.X, pady=(0, 10))
+
+            status_label = ttk.Label(
+                progress_frame,
+                text="",
+                font=scaled_font("Arial", 10),
+                wraplength=scaled(740),
+                justify=tk.LEFT,
+                anchor=tk.W
+            )
+            status_label.pack(fill=tk.X)
 
             progress_bar['maximum'] = len(asins)
 
