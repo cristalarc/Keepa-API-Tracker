@@ -224,6 +224,23 @@ class KeepaTrackerApp:
         )
         debug_mode_desc.pack(pady=(0, 10))
 
+        # Settings Button
+        settings_btn = ttk.Button(
+            button_frame,
+            text="Settings",
+            command=self.open_settings,
+            width=25
+        )
+        settings_btn.pack(pady=(20, 4))
+
+        settings_desc = ttk.Label(
+            button_frame,
+            text="Adjust UI scale (font and widget size)",
+            font=scaled_font("Arial", 9),
+            foreground="gray"
+        )
+        settings_desc.pack(pady=(0, 10))
+
         # Exit Button
         exit_btn = ttk.Button(
             button_frame,
@@ -231,7 +248,7 @@ class KeepaTrackerApp:
             command=self.exit_application,
             width=25
         )
-        exit_btn.pack(pady=(20, 0))
+        exit_btn.pack(pady=(10, 0))
         
         # Add footer
         footer_label = ttk.Label(
@@ -1008,6 +1025,126 @@ class KeepaTrackerApp:
                 f"An error occurred during debug analysis:\n{str(e)}",
                 parent=self.root
             )
+
+    def open_settings(self):
+        """
+        Open the Settings dialog. Currently exposes UI scale controls
+        (font and widget size) and writes to keepa_settings.json.
+        """
+        from settings import (
+            get_ui_scale_override, set_ui_scale_override,
+        )
+        from window_utils import get_scale_factor
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Settings")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        size_and_center_on_parent(dialog, self.root, 460, 360)
+
+        frame = ttk.Frame(dialog, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(
+            frame,
+            text="UI Scale",
+            font=scaled_font("Arial", 14, "bold"),
+        ).pack(anchor="w")
+
+        ttk.Label(
+            frame,
+            text=f"Current scale: {get_scale_factor():.2f}x",
+            font=scaled_font("Arial", 10),
+            foreground="gray",
+        ).pack(anchor="w", pady=(0, 12))
+
+        ttk.Label(
+            frame,
+            text="Pick a preset or set a custom value. Changes apply on restart.",
+            font=scaled_font("Arial", 9),
+            foreground="gray",
+            wraplength=scaled(400),
+        ).pack(anchor="w", pady=(0, 12))
+
+        current_override = get_ui_scale_override()
+        choice_var = tk.StringVar(value="auto" if current_override is None else "custom")
+        custom_var = tk.DoubleVar(value=float(current_override) if current_override is not None else 1.0)
+
+        presets = [
+            ("auto", "Auto-detect (recommended)", None),
+            ("small", "Small (0.85x)", 0.85),
+            ("normal", "Normal (1.00x)", 1.0),
+            ("large", "Large (1.15x)", 1.15),
+            ("xlarge", "Extra Large (1.30x)", 1.30),
+            ("custom", "Custom", None),
+        ]
+
+        # If saved override matches a preset, select it
+        if current_override is not None:
+            for key, _label, val in presets:
+                if val is not None and abs(val - current_override) < 0.005:
+                    choice_var.set(key)
+                    break
+
+        for key, label, _val in presets:
+            ttk.Radiobutton(
+                frame, text=label, value=key, variable=choice_var
+            ).pack(anchor="w", pady=1)
+
+        custom_row = ttk.Frame(frame)
+        custom_row.pack(anchor="w", pady=(6, 0), fill=tk.X)
+        ttk.Label(custom_row, text="Custom value (0.5 - 3.0):").pack(side=tk.LEFT)
+        custom_entry = ttk.Spinbox(
+            custom_row, from_=0.5, to=3.0, increment=0.05,
+            textvariable=custom_var, width=6,
+        )
+        custom_entry.pack(side=tk.LEFT, padx=(8, 0))
+
+        button_row = ttk.Frame(frame)
+        button_row.pack(fill=tk.X, pady=(20, 0))
+
+        def apply_and_close():
+            choice = choice_var.get()
+            if choice == "auto":
+                new_value = None
+            elif choice == "custom":
+                try:
+                    new_value = float(custom_var.get())
+                except (ValueError, tk.TclError):
+                    messagebox.showerror(
+                        "Invalid value",
+                        "Custom scale must be a number between 0.5 and 3.0.",
+                        parent=dialog,
+                    )
+                    return
+                if not (0.5 <= new_value <= 3.0):
+                    messagebox.showerror(
+                        "Invalid value",
+                        "Custom scale must be between 0.5 and 3.0.",
+                        parent=dialog,
+                    )
+                    return
+            else:
+                new_value = next(v for k, _l, v in presets if k == choice)
+
+            if not set_ui_scale_override(new_value):
+                messagebox.showerror(
+                    "Save failed",
+                    "Could not write keepa_settings.json. Check file permissions.",
+                    parent=dialog,
+                )
+                return
+
+            messagebox.showinfo(
+                "Saved",
+                "UI scale saved. Restart the app for the change to take effect.",
+                parent=dialog,
+            )
+            dialog.destroy()
+
+        ttk.Button(button_row, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT)
+        ttk.Button(button_row, text="Apply", command=apply_and_close, style="Accent.TButton").pack(side=tk.RIGHT, padx=(0, 8))
 
     def exit_application(self):
         """Exits the application"""

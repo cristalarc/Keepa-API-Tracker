@@ -14,8 +14,12 @@ import tkinter.font as tkfont
 
 
 _scale_factor = 1.0
-_MIN_SCALE = 0.75
+_MIN_SCALE = 0.85
 _MAX_SCALE = 2.5
+# Floor for the auto-detected screen-size factor. Keeps small laptops
+# (1366x768) at a readable scale instead of shrinking to ~0.78.
+_AUTO_MIN_SIZE_FACTOR = 0.95
+_AUTO_MAX_SIZE_FACTOR = 2.0
 
 
 def _safe_get_monitors():
@@ -52,11 +56,21 @@ def init_dpi_scaling(root):
     root.update_idletasks()
 
     override = os.environ.get("KEEPA_UI_SCALE")
+    saved_override = None
+    if not override:
+        try:
+            from settings import get_ui_scale_override
+            saved_override = get_ui_scale_override()
+        except Exception:
+            saved_override = None
+
     if override:
         try:
             _scale_factor = max(_MIN_SCALE, min(_MAX_SCALE, float(override)))
         except ValueError:
             _scale_factor = 1.0
+    elif saved_override is not None:
+        _scale_factor = max(_MIN_SCALE, min(_MAX_SCALE, float(saved_override)))
     else:
         try:
             actual_dpi = root.winfo_fpixels('1i')
@@ -73,7 +87,7 @@ def init_dpi_scaling(root):
             screen_h = root.winfo_screenheight()
 
         size_factor = min(screen_w / 1920.0, screen_h / 1080.0)
-        size_factor = max(0.75, min(2.0, size_factor))
+        size_factor = max(_AUTO_MIN_SIZE_FACTOR, min(_AUTO_MAX_SIZE_FACTOR, size_factor))
 
         _scale_factor = max(_MIN_SCALE, min(_MAX_SCALE, dpi_factor * size_factor))
 
