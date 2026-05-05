@@ -14,6 +14,10 @@ from sales_rank_module import SalesRankAnalyzer
 from debug_mode import DebugViewer
 from competitor_price_tracker import CompetitorPriceTracker
 from walmart_price_tracker import WalmartPriceTracker
+from walmart_ip_manager import (
+    load_all_ip_lists, save_ip_lists, validate_ip_number, validate_ip_list,
+    add_ips_to_list, update_ip_description,
+)
 from delivery_speed_tracker import DeliverySpeedTracker
 from asin_manager import (
     load_all_asin_lists, save_asin_lists, validate_asin_list,
@@ -185,6 +189,23 @@ class KeepaTrackerApp:
             foreground="gray"
         )
         walmart_price_desc.pack(pady=(0, 10))
+
+        # Walmart IP Manager Button
+        walmart_ip_btn = ttk.Button(
+            button_frame,
+            text="Walmart IP Manager",
+            command=self.run_walmart_ip_manager,
+            width=25
+        )
+        walmart_ip_btn.pack(pady=10)
+
+        walmart_ip_desc = ttk.Label(
+            button_frame,
+            text="Manage Walmart IP lists and product descriptions",
+            font=scaled_font("Arial", 9),
+            foreground="gray"
+        )
+        walmart_ip_desc.pack(pady=(0, 10))
 
         # Delivery Speed by ZIP Button
         delivery_speed_btn = ttk.Button(
@@ -411,6 +432,526 @@ class KeepaTrackerApp:
                 "Error",
                 f"An error occurred in Walmart Price Tracker:\n{str(e)}",
                 parent=self.root
+            )
+
+    def run_walmart_ip_manager(self):
+        """Opens the Walmart IP Manager window for managing IP lists and product descriptions."""
+        try:
+            manager_window = tk.Toplevel(self.root)
+            manager_window.title("Walmart IP Manager")
+            manager_window.transient(self.root)
+            manager_window.resizable(True, True)
+            size_and_center_on_parent(manager_window, self.root, 1100, 860)
+            clamp_minsize(manager_window, 800, 600)
+
+            main_frame = ttk.Frame(manager_window, padding="20")
+            main_frame.pack(fill=tk.BOTH, expand=True)
+
+            ttk.Label(
+                main_frame, text="Walmart IP Manager",
+                font=scaled_font("Arial", 18, "bold"),
+            ).pack(pady=(0, 20))
+
+            notebook = ttk.Notebook(main_frame)
+            notebook.pack(fill=tk.BOTH, expand=True)
+
+            # ===== Add IPs Tab =====
+            add_frame = ttk.Frame(notebook, padding="10")
+            notebook.add(add_frame, text="Add IPs")
+
+            # List selector
+            list_sel_frame = ttk.Frame(add_frame)
+            list_sel_frame.pack(fill=tk.X, pady=(0, 12))
+
+            ttk.Label(list_sel_frame, text="Add to list:").pack(side=tk.LEFT)
+            ip_lists_data = load_all_ip_lists()
+            add_list_names = list(ip_lists_data.keys()) if ip_lists_data else ["Default List"]
+            add_list_var = tk.StringVar(value=add_list_names[0] if add_list_names else "Default List")
+            add_list_combo = ttk.Combobox(
+                list_sel_frame, textvariable=add_list_var,
+                values=add_list_names, state="readonly", width=30,
+            )
+            add_list_combo.pack(side=tk.LEFT, padx=(10, 0))
+
+            def create_new_ip_list():
+                new_name = simpledialog.askstring(
+                    "New List", "Enter name for new list:", parent=manager_window
+                )
+                if not (new_name and new_name.strip()):
+                    return
+                new_name = new_name.strip()
+                current = load_all_ip_lists()
+                if new_name in current:
+                    messagebox.showerror("Error", "List name already exists.", parent=manager_window)
+                    return
+                current[new_name] = {"ips": [], "ip_descriptions": {}, "description": ""}
+                if save_ip_lists(current):
+                    refresh_all()
+                    add_list_var.set(new_name)
+                    messagebox.showinfo("Success", f"Created list: {new_name}", parent=manager_window)
+                else:
+                    messagebox.showerror("Error", "Failed to create list.", parent=manager_window)
+
+            ttk.Button(
+                list_sel_frame, text="New List", command=create_new_ip_list
+            ).pack(side=tk.LEFT, padx=(10, 0))
+
+            # Single-IP add form
+            single_add_frame = ttk.LabelFrame(add_frame, text="Add Single IP", padding="10")
+            single_add_frame.pack(fill=tk.X, pady=(0, 12))
+
+            ip_row = ttk.Frame(single_add_frame)
+            ip_row.pack(fill=tk.X, pady=(0, 6))
+            ttk.Label(ip_row, text="IP Number:", width=14).pack(side=tk.LEFT)
+            single_ip_var = tk.StringVar()
+            ttk.Entry(ip_row, textvariable=single_ip_var, width=30).pack(side=tk.LEFT, padx=(6, 0))
+
+            desc_row = ttk.Frame(single_add_frame)
+            desc_row.pack(fill=tk.X, pady=(0, 8))
+            ttk.Label(desc_row, text="Description:", width=14).pack(side=tk.LEFT)
+            single_desc_var = tk.StringVar()
+            ttk.Entry(desc_row, textvariable=single_desc_var, width=50).pack(
+                side=tk.LEFT, padx=(6, 0), fill=tk.X, expand=True
+            )
+
+            def add_single_ip():
+                ip = single_ip_var.get().strip()
+                if not ip:
+                    messagebox.showwarning("Missing IP", "Enter an IP number.", parent=manager_window)
+                    return
+                if not validate_ip_number(ip):
+                    messagebox.showerror(
+                        "Invalid IP",
+                        f"'{ip}' is not a valid Walmart IP number.\nMust contain digits only (e.g. 18170010387).",
+                        parent=manager_window,
+                    )
+                    return
+                desc = single_desc_var.get().strip()
+                list_name = add_list_var.get()
+                total, added = add_ips_to_list([ip], list_name, ip_description=desc)
+                if added:
+                    single_ip_var.set("")
+                    single_desc_var.set("")
+                    refresh_all()
+                    messagebox.showinfo(
+                        "Added", f"Added IP {ip} to '{list_name}'.\nTotal IPs in list: {total}",
+                        parent=manager_window,
+                    )
+                else:
+                    messagebox.showinfo(
+                        "Duplicate", f"IP {ip} already exists in '{list_name}'.",
+                        parent=manager_window,
+                    )
+
+            ttk.Button(
+                single_add_frame, text="Add IP", command=add_single_ip, style="Accent.TButton"
+            ).pack(anchor=tk.W)
+
+            # Bulk paste section
+            bulk_frame = ttk.LabelFrame(add_frame, text="Bulk Add (IP numbers only, one per line or comma-separated)", padding="10")
+            bulk_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 0))
+
+            bulk_text = tk.Text(bulk_frame, height=8, width=55)
+            bulk_text.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+
+            def add_bulk_ips():
+                text_content = bulk_text.get("1.0", tk.END).strip()
+                valid_ips, error_msg = validate_ip_list(text_content)
+                if error_msg and not valid_ips:
+                    messagebox.showerror("Validation Error", error_msg, parent=manager_window)
+                    return
+                if not valid_ips:
+                    messagebox.showwarning("No IPs", "No valid IP numbers found in input.", parent=manager_window)
+                    return
+                list_name = add_list_var.get()
+                total, added = add_ips_to_list(valid_ips, list_name)
+                msg = f"Added {added} new IP(s) to '{list_name}'. Total in list: {total}"
+                if error_msg:
+                    msg += f"\n\nWarning: {error_msg}"
+                messagebox.showinfo("Done", msg, parent=manager_window)
+                refresh_all()
+                bulk_text.delete("1.0", tk.END)
+
+            ttk.Button(
+                bulk_frame, text="Add IPs", command=add_bulk_ips, style="Accent.TButton"
+            ).pack(anchor=tk.W)
+
+            # ===== Manage Lists Tab =====
+            manage_frame = ttk.Frame(notebook, padding="10")
+            notebook.add(manage_frame, text="Manage Lists")
+
+            lists_overview_frame = ttk.LabelFrame(manage_frame, text="IP Lists", padding="10")
+            lists_overview_frame.pack(fill=tk.BOTH, expand=True)
+
+            overview_cols = ("List Name", "IP Count", "Description")
+            lists_tree = ttk.Treeview(
+                lists_overview_frame, columns=overview_cols, show="headings", height=20
+            )
+            for col in overview_cols:
+                lists_tree.heading(col, text=col)
+            lists_tree.column("List Name", width=scaled(220), anchor=tk.W)
+            lists_tree.column("IP Count", width=scaled(80), anchor=tk.CENTER)
+            lists_tree.column("Description", width=scaled(400), anchor=tk.W)
+            lists_tree_scroll = ttk.Scrollbar(
+                lists_overview_frame, orient=tk.VERTICAL, command=lists_tree.yview
+            )
+            lists_tree.configure(yscrollcommand=lists_tree_scroll.set)
+            lists_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            lists_tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+            def refresh_lists_tree():
+                for item in lists_tree.get_children():
+                    lists_tree.delete(item)
+                for lname, ldata in load_all_ip_lists().items():
+                    lists_tree.insert(
+                        "", tk.END,
+                        values=(lname, len(ldata.get("ips", [])), ldata.get("description", "")),
+                    )
+
+            def remove_selected_list():
+                sel = lists_tree.selection()
+                if not sel:
+                    messagebox.showwarning("No Selection", "Select a list to remove.", parent=manager_window)
+                    return
+                lname = lists_tree.item(sel[0])["values"][0]
+                if messagebox.askyesno("Confirm", f"Remove list '{lname}' and all its IPs?", parent=manager_window):
+                    current = load_all_ip_lists()
+                    if lname in current:
+                        del current[lname]
+                        if save_ip_lists(current):
+                            refresh_all()
+                        else:
+                            messagebox.showerror("Error", "Failed to remove list.", parent=manager_window)
+
+            def rename_selected_list():
+                sel = lists_tree.selection()
+                if not sel:
+                    messagebox.showwarning("No Selection", "Select a list to rename.", parent=manager_window)
+                    return
+                old_name = lists_tree.item(sel[0])["values"][0]
+                new_name = simpledialog.askstring(
+                    "Rename List", f"New name for '{old_name}':",
+                    initialvalue=old_name, parent=manager_window,
+                )
+                if not (new_name and new_name.strip()):
+                    return
+                new_name = new_name.strip()
+                if new_name == old_name:
+                    return
+                current = load_all_ip_lists()
+                if new_name in current:
+                    messagebox.showerror("Error", "A list with that name already exists.", parent=manager_window)
+                    return
+                current[new_name] = current.pop(old_name)
+                if save_ip_lists(current):
+                    refresh_all()
+                else:
+                    messagebox.showerror("Error", "Failed to rename list.", parent=manager_window)
+
+            def edit_list_description():
+                sel = lists_tree.selection()
+                if not sel:
+                    messagebox.showwarning("No Selection", "Select a list to edit.", parent=manager_window)
+                    return
+                lname = lists_tree.item(sel[0])["values"][0]
+                current = load_all_ip_lists()
+                old_desc = current.get(lname, {}).get("description", "")
+                new_desc = simpledialog.askstring(
+                    "List Description",
+                    f"Description for list '{lname}':",
+                    initialvalue=old_desc,
+                    parent=manager_window,
+                )
+                if new_desc is None:
+                    return
+                current[lname]["description"] = new_desc.strip()
+                if save_ip_lists(current):
+                    refresh_all()
+
+            def export_ip_lists():
+                current = load_all_ip_lists()
+                if not current:
+                    messagebox.showwarning("No Lists", "No IP lists to export.", parent=manager_window)
+                    return
+                export_all = messagebox.askyesno(
+                    "Export",
+                    "Export ALL lists?\n\nYes = all lists  /  No = selected list only",
+                    parent=manager_window,
+                )
+                if export_all:
+                    export_data = current
+                else:
+                    sel = lists_tree.selection()
+                    if not sel:
+                        messagebox.showwarning("No Selection", "Select a list to export.", parent=manager_window)
+                        return
+                    lname = lists_tree.item(sel[0])["values"][0]
+                    export_data = {lname: current[lname]}
+                save_path = filedialog.asksaveasfilename(
+                    title="Export IP Lists",
+                    defaultextension=".json",
+                    filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                    parent=manager_window,
+                )
+                if not save_path:
+                    return
+                try:
+                    with open(save_path, "w") as f:
+                        json.dump({"lists": export_data}, f, indent=2)
+                    total = sum(len(d.get("ips", [])) for d in export_data.values())
+                    messagebox.showinfo(
+                        "Export Complete",
+                        f"Exported {len(export_data)} list(s) with {total} IP(s) to:\n{save_path}",
+                        parent=manager_window,
+                    )
+                except Exception as exc:
+                    messagebox.showerror("Export Failed", str(exc), parent=manager_window)
+
+            def import_ip_lists():
+                file_path = filedialog.askopenfilename(
+                    title="Import IP Lists",
+                    filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                    parent=manager_window,
+                )
+                if not file_path:
+                    return
+                try:
+                    with open(file_path, "r") as f:
+                        imported = json.load(f)
+                    # Accept both {lists: {...}} and plain {name: {...}} format
+                    if isinstance(imported, dict) and "lists" in imported:
+                        imported = imported["lists"]
+                    if not isinstance(imported, dict):
+                        messagebox.showerror("Invalid Format", "Expected a JSON object.", parent=manager_window)
+                        return
+                    current = load_all_ip_lists()
+                    conflicts = [n for n in imported if n in current]
+                    if conflicts:
+                        choice = messagebox.askyesnocancel(
+                            "Conflicts",
+                            f"Lists already exist: {', '.join(conflicts)}\n\n"
+                            "Yes = Merge  /  No = Replace  /  Cancel = Skip conflicts",
+                            parent=manager_window,
+                        )
+                        if choice is None:
+                            for n in conflicts:
+                                del imported[n]
+                        elif choice:  # merge
+                            for n in conflicts:
+                                existing = set(current[n].get("ips", []))
+                                new_ips = set(imported[n].get("ips", []))
+                                merged = list(existing | new_ips)
+                                imported[n]["ips"] = merged
+                    current.update(imported)
+                    if save_ip_lists(current):
+                        total = sum(len(d.get("ips", [])) for d in imported.values())
+                        messagebox.showinfo(
+                            "Import Complete",
+                            f"Imported {len(imported)} list(s) with {total} IP(s).",
+                            parent=manager_window,
+                        )
+                        refresh_all()
+                    else:
+                        messagebox.showerror("Error", "Failed to save imported lists.", parent=manager_window)
+                except json.JSONDecodeError:
+                    messagebox.showerror("Invalid File", "File is not valid JSON.", parent=manager_window)
+                except Exception as exc:
+                    messagebox.showerror("Import Failed", str(exc), parent=manager_window)
+
+            manage_btns = ttk.Frame(manage_frame)
+            manage_btns.pack(fill=tk.X, pady=(10, 0))
+            ttk.Button(manage_btns, text="Rename Selected", command=rename_selected_list).pack(side=tk.LEFT, padx=(0, 5))
+            ttk.Button(manage_btns, text="Edit Description", command=edit_list_description).pack(side=tk.LEFT, padx=(0, 5))
+            ttk.Button(manage_btns, text="Remove Selected", command=remove_selected_list).pack(side=tk.LEFT, padx=(0, 10))
+            ttk.Button(manage_btns, text="Export Lists", command=export_ip_lists, style="Accent.TButton").pack(side=tk.LEFT, padx=(0, 5))
+            ttk.Button(manage_btns, text="Import Lists", command=import_ip_lists, style="Accent.TButton").pack(side=tk.LEFT)
+
+            # ===== Edit List Tab =====
+            edit_frame = ttk.Frame(notebook, padding="10")
+            notebook.add(edit_frame, text="Edit List")
+
+            edit_sel_frame = ttk.Frame(edit_frame)
+            edit_sel_frame.pack(fill=tk.X, pady=(0, 10))
+            ttk.Label(edit_sel_frame, text="Select list:").pack(side=tk.LEFT)
+            edit_list_names = list(load_all_ip_lists().keys())
+            edit_list_var = tk.StringVar(value=edit_list_names[0] if edit_list_names else "")
+            edit_list_combo = ttk.Combobox(
+                edit_sel_frame, textvariable=edit_list_var,
+                values=edit_list_names, state="readonly", width=30,
+            )
+            edit_list_combo.pack(side=tk.LEFT, padx=(10, 0))
+
+            # IPs treeview for the selected list
+            ips_frame = ttk.LabelFrame(edit_frame, text="IPs in List", padding="10")
+            ips_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 0))
+
+            ip_cols = ("IP Number", "Description")
+            ips_tree = ttk.Treeview(ips_frame, columns=ip_cols, show="headings", height=20)
+            ips_tree.heading("IP Number", text="IP Number")
+            ips_tree.heading("Description", text="Product Description")
+            ips_tree.column("IP Number", width=scaled(200), anchor=tk.W)
+            ips_tree.column("Description", width=scaled(580), anchor=tk.W)
+            ips_tree_scroll = ttk.Scrollbar(ips_frame, orient=tk.VERTICAL, command=ips_tree.yview)
+            ips_tree.configure(yscrollcommand=ips_tree_scroll.set)
+            ips_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            ips_tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+            edit_count_label = ttk.Label(ips_frame, text="IPs: 0")
+            edit_count_label.pack(pady=(5, 0))
+
+            def refresh_edit_list():
+                lname = edit_list_var.get()
+                ips_tree.delete(*ips_tree.get_children())
+                if not lname:
+                    edit_count_label.config(text="IPs: 0")
+                    return
+                data = load_all_ip_lists().get(lname, {})
+                ips = data.get("ips", [])
+                descs = data.get("ip_descriptions", {})
+                for ip in ips:
+                    ips_tree.insert("", tk.END, values=(ip, descs.get(ip, "")))
+                edit_count_label.config(text=f"IPs: {len(ips)}")
+
+            def add_ip_to_edit_list():
+                lname = edit_list_var.get()
+                if not lname:
+                    messagebox.showwarning("No List", "Select a list first.", parent=manager_window)
+                    return
+                # Popup dialog for IP + description
+                dlg = tk.Toplevel(manager_window)
+                dlg.title("Add IP")
+                dlg.transient(manager_window)
+                dlg.grab_set()
+                dlg.resizable(False, False)
+                size_and_center_on_parent(dlg, manager_window, 440, 200)
+
+                f = ttk.Frame(dlg, padding="16")
+                f.pack(fill=tk.BOTH, expand=True)
+
+                ttk.Label(f, text="IP Number:").grid(row=0, column=0, sticky=tk.W, pady=4)
+                ip_e = ttk.Entry(f, width=30)
+                ip_e.grid(row=0, column=1, sticky=tk.EW, padx=(8, 0), pady=4)
+                ip_e.focus_set()
+
+                ttk.Label(f, text="Description:").grid(row=1, column=0, sticky=tk.W, pady=4)
+                desc_e = ttk.Entry(f, width=30)
+                desc_e.grid(row=1, column=1, sticky=tk.EW, padx=(8, 0), pady=4)
+                f.columnconfigure(1, weight=1)
+
+                def do_add(event=None):
+                    ip = ip_e.get().strip()
+                    if not ip:
+                        messagebox.showwarning("Missing IP", "Enter an IP number.", parent=dlg)
+                        return
+                    if not validate_ip_number(ip):
+                        messagebox.showerror(
+                            "Invalid IP",
+                            f"'{ip}' is not valid — must be digits only.",
+                            parent=dlg,
+                        )
+                        return
+                    desc = desc_e.get().strip()
+                    total, added = add_ips_to_list([ip], lname, ip_description=desc)
+                    if added:
+                        dlg.destroy()
+                        refresh_all()
+                    else:
+                        messagebox.showinfo("Duplicate", f"IP {ip} already exists in '{lname}'.", parent=dlg)
+
+                btn_row = ttk.Frame(f)
+                btn_row.grid(row=2, column=0, columnspan=2, sticky=tk.E, pady=(12, 0))
+                ttk.Button(btn_row, text="Cancel", command=dlg.destroy).pack(side=tk.RIGHT, padx=(6, 0))
+                ttk.Button(btn_row, text="Add", command=do_add, style="Accent.TButton").pack(side=tk.RIGHT)
+                dlg.bind("<Return>", do_add)
+                dlg.wait_window()
+
+            def edit_ip_description():
+                sel = ips_tree.selection()
+                if not sel:
+                    messagebox.showwarning("No Selection", "Select an IP row to edit.", parent=manager_window)
+                    return
+                lname = edit_list_var.get()
+                row = ips_tree.item(sel[0])["values"]
+                ip_number = str(row[0])
+                old_desc = str(row[1])
+                new_desc = simpledialog.askstring(
+                    "Edit Description",
+                    f"Description for IP {ip_number}:",
+                    initialvalue=old_desc,
+                    parent=manager_window,
+                )
+                if new_desc is None:
+                    return
+                update_ip_description(ip_number, new_desc.strip(), list_name=lname)
+                refresh_all()
+
+            def remove_selected_ips():
+                sel = ips_tree.selection()
+                if not sel:
+                    messagebox.showwarning("No Selection", "Select IPs to remove.", parent=manager_window)
+                    return
+                lname = edit_list_var.get()
+                to_remove = [str(ips_tree.item(s)["values"][0]) for s in sel]
+                if not messagebox.askyesno(
+                    "Confirm", f"Remove {len(to_remove)} IP(s) from '{lname}'?", parent=manager_window
+                ):
+                    return
+                current = load_all_ip_lists()
+                if lname in current:
+                    current[lname]["ips"] = [
+                        ip for ip in current[lname].get("ips", []) if ip not in to_remove
+                    ]
+                    for ip in to_remove:
+                        current[lname].get("ip_descriptions", {}).pop(ip, None)
+                    if save_ip_lists(current):
+                        refresh_all()
+                    else:
+                        messagebox.showerror("Error", "Failed to remove IPs.", parent=manager_window)
+
+            import webbrowser as _wb
+
+            def open_ip_in_browser():
+                sel = ips_tree.selection()
+                if not sel:
+                    messagebox.showwarning("No Selection", "Select an IP to open.", parent=manager_window)
+                    return
+                ip_number = str(ips_tree.item(sel[0])["values"][0])
+                _wb.open(f"https://www.walmart.com/ip/{ip_number}")
+
+            edit_btns = ttk.Frame(edit_frame)
+            edit_btns.pack(fill=tk.X, pady=(8, 0))
+            ttk.Button(edit_btns, text="Add IP", command=add_ip_to_edit_list, style="Accent.TButton").pack(side=tk.LEFT, padx=(0, 5))
+            ttk.Button(edit_btns, text="Edit Description", command=edit_ip_description).pack(side=tk.LEFT, padx=(0, 5))
+            ttk.Button(edit_btns, text="Remove Selected", command=remove_selected_ips).pack(side=tk.LEFT, padx=(0, 10))
+            ttk.Button(edit_btns, text="Open in Browser", command=open_ip_in_browser).pack(side=tk.LEFT)
+
+            edit_list_combo.bind("<<ComboboxSelected>>", lambda _e: refresh_edit_list())
+
+            # ===== Global refresh =====
+            def refresh_all():
+                current_names = list(load_all_ip_lists().keys())
+                # Update add tab combo
+                add_list_combo["values"] = current_names
+                if add_list_var.get() not in current_names:
+                    add_list_var.set(current_names[0] if current_names else "Default List")
+                # Update manage tab tree
+                refresh_lists_tree()
+                # Update edit tab combo and tree
+                edit_list_combo["values"] = current_names
+                if edit_list_var.get() not in current_names:
+                    edit_list_var.set(current_names[0] if current_names else "")
+                refresh_edit_list()
+
+            refresh_all()
+
+            ttk.Button(main_frame, text="Close", command=manager_window.destroy).pack(pady=(16, 0))
+            manager_window.wait_window()
+
+        except Exception as e:
+            messagebox.showerror(
+                "Error",
+                f"An error occurred in Walmart IP Manager:\n{str(e)}",
+                parent=self.root,
             )
 
     def run_delivery_speed_tracker(self):

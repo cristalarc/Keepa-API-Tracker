@@ -1,6 +1,6 @@
 """
 Walmart IP Management Module
-Manages named lists of Walmart IP numbers for price tracking.
+Manages named lists of Walmart IP numbers with per-IP product descriptions.
 Mirrors the asin_manager.py pattern.
 """
 
@@ -48,7 +48,32 @@ def _normalize_single_list_data(list_data):
         description = str(description)
         changed = True
 
-    normalized = {"ips": normalized_ips, "description": description}
+    # Per-IP descriptions: {ip_number: description_text}
+    raw_desc = list_data.get("ip_descriptions", {})
+    if not isinstance(raw_desc, dict):
+        raw_desc = {}
+        changed = True
+
+    normalized_desc = {}
+    for ip in normalized_ips:
+        if ip in raw_desc and isinstance(raw_desc[ip], str):
+            normalized_desc[ip] = raw_desc[ip]
+        else:
+            normalized_desc[ip] = ""
+            if ip in raw_desc:
+                changed = True
+
+    # Drop stale keys
+    for key in raw_desc:
+        if key not in seen_ips:
+            changed = True
+            break
+
+    normalized = {
+        "ips": normalized_ips,
+        "ip_descriptions": normalized_desc,
+        "description": description,
+    }
     return normalized, changed
 
 
@@ -83,7 +108,7 @@ def load_all_ip_lists():
     Load all Walmart IP lists from JSON file.
 
     Returns:
-        dict: Mapping of list names to their data (ips, description)
+        dict: Mapping of list names to their data (ips, ip_descriptions, description)
     """
     try:
         if os.path.exists(WALMART_IP_FILE):
@@ -173,13 +198,15 @@ def validate_ip_list(ip_text):
     return valid_ips, None
 
 
-def add_ips_to_list(new_ips, list_name="Default List"):
+def add_ips_to_list(new_ips, list_name="Default List", ip_description=None):
     """
     Add Walmart IP numbers to a named list, avoiding duplicates.
 
     Args:
         new_ips (list): List of IP number strings to add
         list_name (str): Name of the list to add to
+        ip_description (str | dict | None): Description to assign.
+            str → applied to all IPs; dict → {ip_number: description}
 
     Returns:
         tuple: (total_count, added_count) after adding
@@ -187,22 +214,74 @@ def add_ips_to_list(new_ips, list_name="Default List"):
     lists_data = load_all_ip_lists()
 
     if list_name not in lists_data:
-        lists_data[list_name] = {"ips": [], "description": ""}
+        lists_data[list_name] = {"ips": [], "ip_descriptions": {}, "description": ""}
 
     current_ips = list(lists_data[list_name].get("ips", []))
+    current_desc = dict(lists_data[list_name].get("ip_descriptions", {}))
     original_count = len(current_ips)
     seen = set(current_ips)
+
+    # Build per-IP description map
+    desc_by_ip = {}
+    if isinstance(ip_description, dict):
+        for k, v in ip_description.items():
+            desc_by_ip[k.strip()] = str(v) if v else ""
+    elif isinstance(ip_description, str):
+        for ip in new_ips:
+            desc_by_ip[ip.strip()] = ip_description
 
     added_count = 0
     for ip in new_ips:
         ip_clean = ip.strip()
-        if ip_clean and ip_clean not in seen:
+        if not ip_clean:
+            continue
+        if ip_clean not in seen:
             current_ips.append(ip_clean)
             seen.add(ip_clean)
+            current_desc[ip_clean] = desc_by_ip.get(ip_clean, "")
             added_count += 1
 
     lists_data[list_name]["ips"] = current_ips
+    lists_data[list_name]["ip_descriptions"] = current_desc
 
     if save_ip_lists(lists_data):
         return len(current_ips), added_count
     return original_count, 0
+
+
+def update_ip_description(ip_number, description, list_name=None):
+    """
+    Update the description for an IP number in one or all lists.
+
+    Args:
+        ip_number (str): The IP number to update
+        description (str): New description text
+        list_name (str | None): Specific list, or None to update in all lists
+
+    Returns:
+        int: Number of entries updated
+    """
+    ip_clean = ip_number.strip() if isinstance(ip_number, str) else ""
+    if not ip_clean:
+        return 0
+
+    lists_data = load_all_ip_lists()
+    targets = [list_name] if list_name else list(lists_data.keys())
+    count = 0
+
+    for name in targets:
+        if name not in lists_data:
+            continue
+        if ip_clean in lists_data[name].get("ips", []):
+            lists_data[name]["ip_descriptions"][ip_clean] = description or ""
+            count += 1
+
+    if count:
+        save_ip_lists(lists_data)
+    return count
+
+
+def get_ip_description(ip_number, list_name):
+    """Return the stored description for an IP in a list, or ''."""
+    lists_data = load_all_ip_lists()
+    return lists_data.get(list_name, {}).get("ip_descriptions", {}).get(ip_number, "")
