@@ -14,7 +14,10 @@ from asin_manager import (
     load_saved_asins, load_all_asin_lists, validate_asin, validate_asin_list,
     add_asins_to_saved_list, save_asin_lists
 )
-from window_utils import center_window_on_parent, scaled_font, scaled
+from window_utils import (
+    center_window_on_parent, scaled_font, scaled,
+    size_and_center_on_parent, clamp_minsize,
+)
 
 
 # Amazon's seller ID constant
@@ -1008,16 +1011,9 @@ class BuyboxAnalyzer:
         if parent_window:
             result_root.transient()  # Clear transient relationship
 
-        # Size and position window on the same screen as the parent
-        result_root.update_idletasks()
-        screen_width = result_root.winfo_screenwidth()
-        screen_height = result_root.winfo_screenheight()
-        window_width = min(int(screen_width * 0.95), 1920)
-        window_height = min(int(screen_height * 0.90), 1080)
-        center_window_on_parent(result_root, parent_window, window_width, window_height)
-
-        # Set minimum size AFTER geometry
-        result_root.minsize(1200, 800)
+        # Size and position window on the parent's monitor
+        size_and_center_on_parent(result_root, parent_window, 1920, 1080, max_frac=0.95)
+        clamp_minsize(result_root, 1200, 800)
 
         # Show window on top initially, then allow normal behavior
         result_root.lift()
@@ -1687,16 +1683,9 @@ class BuyboxAnalyzer:
         if parent_window:
             result_root.transient()  # Clear transient relationship
 
-        # Size and position window on the same screen as the parent
-        result_root.update_idletasks()
-        screen_width = result_root.winfo_screenwidth()
-        screen_height = result_root.winfo_screenheight()
-        window_width = min(int(screen_width * 0.95), 1920)
-        window_height = min(int(screen_height * 0.90), 1080)
-        center_window_on_parent(result_root, parent_window, window_width, window_height)
-
-        # Set minimum size AFTER geometry
-        result_root.minsize(1200, 800)
+        # Size and position window on the parent's monitor
+        size_and_center_on_parent(result_root, parent_window, 1920, 1080, max_frac=0.95)
+        clamp_minsize(result_root, 1200, 800)
 
         # Show window on top initially, then allow normal behavior
         result_root.lift()

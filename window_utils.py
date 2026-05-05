@@ -1,22 +1,48 @@
 """
 Window utility functions for consistent window sizing and positioning.
-Ensures child windows open on the same screen/monitor as their parent window.
-Provides DPI-aware scaling for fonts and pixel values on high-resolution displays.
+
+Goals:
+- Child windows always open on the same physical monitor as their parent.
+- Window sizes always fit within that monitor.
+- Fonts and pixel values scale with DPI *and* screen size, in both directions
+  (1366x768 laptop should shrink, 4K should grow). Honors KEEPA_UI_SCALE
+  env var as a hard override.
 """
 
+import os
 import tkinter.font as tkfont
 
 
 _scale_factor = 1.0
+_MIN_SCALE = 0.75
+_MAX_SCALE = 2.5
+
+
+def _safe_get_monitors():
+    """Return list of screeninfo.Monitor or [] if screeninfo is unavailable."""
+    try:
+        from screeninfo import get_monitors
+        return list(get_monitors())
+    except Exception:
+        return []
+
+
+def _monitor_containing(x, y, monitors):
+    """Pick the monitor whose rect contains (x, y); fall back to first/None."""
+    for m in monitors:
+        if m.x <= x < m.x + m.width and m.y <= y < m.y + m.height:
+            return m
+    return monitors[0] if monitors else None
 
 
 def init_dpi_scaling(root):
     """
-    Detect system DPI and apply scaling to Tkinter.
+    Detect DPI + screen size and apply a unified scale factor to Tk.
     Call once after creating the Tk root window.
     """
     global _scale_factor
 
+    # Best-effort DPI awareness on Windows
     try:
         import ctypes
         ctypes.windll.shcore.SetProcessDpiAwareness(2)
@@ -24,15 +50,37 @@ def init_dpi_scaling(root):
         pass
 
     root.update_idletasks()
-    current_scaling = root.tk.call('tk', 'scaling')
-    actual_dpi = root.winfo_fpixels('1i')
-    target_scaling = actual_dpi / 72.0
 
-    if target_scaling > current_scaling * 1.1:
-        _scale_factor = target_scaling / current_scaling
-        root.tk.call('tk', 'scaling', target_scaling)
+    override = os.environ.get("KEEPA_UI_SCALE")
+    if override:
+        try:
+            _scale_factor = max(_MIN_SCALE, min(_MAX_SCALE, float(override)))
+        except ValueError:
+            _scale_factor = 1.0
     else:
-        _scale_factor = 1.0
+        try:
+            actual_dpi = root.winfo_fpixels('1i')
+        except Exception:
+            actual_dpi = 96.0
+        dpi_factor = actual_dpi / 96.0
+
+        monitors = _safe_get_monitors()
+        if monitors:
+            primary = next((m for m in monitors if getattr(m, 'is_primary', False)), monitors[0])
+            screen_w, screen_h = primary.width, primary.height
+        else:
+            screen_w = root.winfo_screenwidth()
+            screen_h = root.winfo_screenheight()
+
+        size_factor = min(screen_w / 1920.0, screen_h / 1080.0)
+        size_factor = max(0.75, min(2.0, size_factor))
+
+        _scale_factor = max(_MIN_SCALE, min(_MAX_SCALE, dpi_factor * size_factor))
+
+    try:
+        root.tk.call('tk', 'scaling', _scale_factor * (96.0 / 72.0))
+    except Exception:
+        pass
 
     for font_name in ('TkDefaultFont', 'TkTextFont', 'TkFixedFont',
                        'TkMenuFont', 'TkHeadingFont', 'TkCaptionFont',
@@ -49,63 +97,121 @@ def init_dpi_scaling(root):
 
 
 def get_scale_factor():
-    """Return the current DPI scale factor."""
+    """Return the current UI scale factor."""
     return _scale_factor
 
 
 def scaled(pixel_value):
-    """Scale a pixel value by the current DPI factor."""
+    """Scale a pixel value by the current UI factor."""
     return max(1, int(pixel_value * _scale_factor))
 
 
 def scaled_font(family, size, weight=""):
-    """Return a font tuple with the size scaled for the current DPI."""
+    """Return a font tuple with the size scaled for the current UI factor."""
     scaled_size = max(1, int(size * _scale_factor))
     if weight:
         return (family, scaled_size, weight)
     return (family, scaled_size)
 
 
-def center_window_on_parent(window, parent, width, height):
+def get_parent_monitor_geometry(parent):
     """
-    Position a window centered over its parent window.
-    This ensures the window opens on the same monitor as the parent.
-    If no parent is provided, centers on the screen.
+    Return (x, y, width, height) of the monitor the parent window sits on.
+    If parent is None, use the mouse position. Falls back to tkinter screen
+    dimensions if screeninfo is unavailable.
+    """
+    monitors = _safe_get_monitors()
 
-    Args:
-        window: The tkinter window to position
-        parent: The parent tkinter window (or None)
-        width: Desired window width
-        height: Desired window height
+    cx = cy = None
+    if parent is not None:
+        try:
+            parent.update_idletasks()
+            cx = parent.winfo_rootx() + parent.winfo_width() // 2
+            cy = parent.winfo_rooty() + parent.winfo_height() // 2
+        except Exception:
+            cx = cy = None
+
+    if cx is None:
+        try:
+            import pyautogui
+            cx, cy = pyautogui.position()
+        except Exception:
+            cx = cy = None
+
+    if monitors and cx is not None and cy is not None:
+        m = _monitor_containing(cx, cy, monitors)
+        if m is not None:
+            return (m.x, m.y, m.width, m.height)
+
+    if monitors:
+        primary = next((m for m in monitors if getattr(m, 'is_primary', False)), monitors[0])
+        return (primary.x, primary.y, primary.width, primary.height)
+
+    if parent is not None:
+        try:
+            return (0, 0, parent.winfo_screenwidth(), parent.winfo_screenheight())
+        except Exception:
+            pass
+    return (0, 0, 1920, 1080)
+
+
+def size_and_center_on_parent(window, parent, desired_w, desired_h, max_frac=0.95):
     """
+    Size a window to fit the parent's monitor and center it over the parent.
+    Returns the actual (width, height) used so callers can clamp minsize().
+    """
+    mon_x, mon_y, mon_w, mon_h = get_parent_monitor_geometry(parent)
+
+    width = min(desired_w, int(mon_w * max_frac))
+    height = min(desired_h, int(mon_h * max_frac))
+
     window.update_idletasks()
 
-    if parent:
-        parent.update_idletasks()
-        parent_x = parent.winfo_rootx()
-        parent_y = parent.winfo_rooty()
-        parent_w = parent.winfo_width()
-        parent_h = parent.winfo_height()
-
-        x = parent_x + (parent_w - width) // 2
-        y = parent_y + (parent_h - height) // 2
+    if parent is not None:
+        try:
+            parent.update_idletasks()
+            parent_x = parent.winfo_rootx()
+            parent_y = parent.winfo_rooty()
+            parent_w = parent.winfo_width()
+            parent_h = parent.winfo_height()
+            x = parent_x + (parent_w - width) // 2
+            y = parent_y + (parent_h - height) // 2
+        except Exception:
+            x = mon_x + (mon_w - width) // 2
+            y = mon_y + (mon_h - height) // 2
     else:
-        # No parent - try to center at mouse position so the window
-        # appears on whichever monitor the user is currently using.
         try:
             import pyautogui
             mouse_x, mouse_y = pyautogui.position()
-            x = mouse_x - (width // 2)
-            y = mouse_y - (height // 2)
+            x = mouse_x - width // 2
+            y = mouse_y - height // 2
         except Exception:
-            # Fallback to screen center
-            screen_w = window.winfo_screenwidth()
-            screen_h = window.winfo_screenheight()
-            x = (screen_w - width) // 2
-            y = (screen_h - height) // 2
+            x = mon_x + (mon_w - width) // 2
+            y = mon_y + (mon_h - height) // 2
 
-    # Ensure window is not positioned off the top-left edge
-    x = max(0, x)
-    y = max(0, y)
+    # Clamp inside monitor bounds so the title bar stays reachable
+    x = max(mon_x, min(x, mon_x + mon_w - width))
+    y = max(mon_y, min(y, mon_y + mon_h - height))
 
     window.geometry(f'{width}x{height}+{x}+{y}')
+    return (width, height)
+
+
+def center_window_on_parent(window, parent, width, height):
+    """
+    Backward-compatible alias. Position a window over its parent or over
+    the mouse cursor if no parent is provided. Delegates to
+    size_and_center_on_parent so the parent's actual monitor is respected.
+    """
+    size_and_center_on_parent(window, parent, width, height)
+
+
+def clamp_minsize(window, width, height, cap_w=1280, cap_h=680):
+    """
+    Set minsize so the window can shrink to fit a 1366x768 laptop.
+    Caps oversized requests; passes smaller requests through unchanged.
+    """
+    try:
+        window.minsize(min(width, cap_w), min(height, cap_h))
+    except Exception:
+        pass

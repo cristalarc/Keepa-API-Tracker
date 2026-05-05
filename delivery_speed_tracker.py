@@ -15,7 +15,10 @@ import pandas as pd
 import requests
 
 from asin_manager import load_all_asin_lists, load_saved_asins, validate_asin_list
-from window_utils import center_window_on_parent, scaled_font, scaled
+from window_utils import (
+    center_window_on_parent, scaled_font, scaled,
+    size_and_center_on_parent, clamp_minsize,
+)
 from delivery_speed_memory import DeliverySpeedMemoryStore
 from zip_list_manager import load_all_zip_lists, parse_zip_list, save_zip_list
 
@@ -831,10 +834,10 @@ class DeliverySpeedTracker:
         root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
         root.title("Delivery Speed by ZIP - Input")
         root.resizable(True, True)
-        root.minsize(760, 700)
 
-        # Center the window on the same screen as the parent
-        center_window_on_parent(root, parent_window, 820, 760)
+        # Size and position window on the parent's monitor
+        size_and_center_on_parent(root, parent_window, 820, 760)
+        clamp_minsize(root, 760, 700)
 
         root.lift()
         root.attributes("-topmost", True)
@@ -1366,15 +1369,10 @@ class DeliverySpeedTracker:
         history_root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
         history_root.title("Delivery Speed History Explorer")
         history_root.resizable(True, True)
-        history_root.minsize(1220, 820)
 
-        # Size and position window on the same screen as the parent
-        history_root.update_idletasks()
-        screen_width = history_root.winfo_screenwidth()
-        screen_height = history_root.winfo_screenheight()
-        width = min(int(screen_width * 0.95), 1500)
-        height = min(int(screen_height * 0.92), 980)
-        center_window_on_parent(history_root, parent_window, width, height)
+        # Size and position window on the parent's monitor
+        size_and_center_on_parent(history_root, parent_window, 1500, 980, max_frac=0.95)
+        clamp_minsize(history_root, 1220, 820)
 
         history_root.lift()
         history_root.attributes("-topmost", True)
@@ -1737,13 +1735,10 @@ class DeliverySpeedTracker:
         result_root = tk.Toplevel(parent_window) if parent_window else tk.Tk()
         result_root.title("Delivery Speed by ZIP - Results")
         result_root.resizable(True, True)
-        result_root.minsize(1200, 760)
 
-        # Size and position window on the same screen as the parent
-        result_root.update_idletasks()
-        width = min(int(result_root.winfo_screenwidth() * 0.95), 1920)
-        height = min(int(result_root.winfo_screenheight() * 0.9), 1080)
-        center_window_on_parent(result_root, parent_window, width, height)
+        # Size and position window on the parent's monitor
+        size_and_center_on_parent(result_root, parent_window, 1920, 1080, max_frac=0.95)
+        clamp_minsize(result_root, 1200, 760)
         result_root.lift()
         result_root.attributes("-topmost", True)
         result_root.after_idle(lambda: result_root.attributes("-topmost", False))

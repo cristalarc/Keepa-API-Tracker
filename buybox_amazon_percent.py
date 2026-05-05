@@ -140,7 +140,10 @@ import tkinter as tk
 import pyautogui
 from screeninfo import get_monitors
 from tkinter import simpledialog, messagebox, filedialog, ttk
-from window_utils import init_dpi_scaling, scaled_font, scaled, center_window_on_parent
+from window_utils import (
+    init_dpi_scaling, scaled_font, scaled, center_window_on_parent,
+    size_and_center_on_parent, clamp_minsize,
+)
 
 def get_user_input():
     """
@@ -174,9 +177,10 @@ def get_user_input():
         """Open ASIN management window"""
         manager_window = tk.Toplevel(root)
         manager_window.title("ASIN Manager")
-        manager_window.geometry("800x600")
         manager_window.transient(root)
         manager_window.grab_set()
+        size_and_center_on_parent(manager_window, root, 800, 600)
+        clamp_minsize(manager_window, 600, 400)
         
         # Load current ASIN lists
         lists_data = load_all_asin_lists()
@@ -631,15 +635,9 @@ def get_user_input():
         # Create a simple dialog to select list
         list_window = tk.Toplevel(root)
         list_window.title("Select List")
-        list_window.geometry("300x200")
         list_window.transient(root)
         list_window.grab_set()
-        
-        # Center the list selection window
-        list_window.update_idletasks()
-        list_x = (list_window.winfo_screenwidth() // 2) - (300 // 2)
-        list_y = (list_window.winfo_screenheight() // 2) - (200 // 2)
-        list_window.geometry(f'300x200+{list_x}+{list_y}')
+        size_and_center_on_parent(list_window, root, 300, 200)
         
         ttk.Label(list_window, text="Select a list to load:").pack(pady=10)
         

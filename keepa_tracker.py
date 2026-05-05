@@ -18,7 +18,10 @@ from asin_manager import (
     load_all_asin_lists, save_asin_lists, validate_asin_list,
     add_asins_to_saved_list, load_saved_asins
 )
-from window_utils import center_window_on_parent, init_dpi_scaling, scaled_font, scaled
+from window_utils import (
+    center_window_on_parent, init_dpi_scaling, scaled_font, scaled,
+    size_and_center_on_parent, clamp_minsize,
+)
 
 
 # Load API key from .env
@@ -57,10 +60,10 @@ class KeepaTrackerApp:
         init_dpi_scaling(self.root)
         self.root.title("Keepa API Tracker")
         self.root.resizable(True, True)
-        self.root.minsize(480, 720)
+        clamp_minsize(self.root, 480, 720)
 
         # Center the window on the monitor where the mouse currently is
-        center_window_on_parent(self.root, None, 520, 800)
+        size_and_center_on_parent(self.root, None, 520, 720)
         
         # Make window stay on top initially, then allow normal behavior
         self.root.lift()
@@ -74,8 +77,8 @@ class KeepaTrackerApp:
         # Title
         title_label = ttk.Label(
             main_frame, 
-            text="Keepa API Tracker", 
-            font=scaled_font("Arial", 24, "bold")
+            text="Keepa API Tracker",
+            font=scaled_font("Arial", 18, "bold")
         )
         title_label.pack(pady=(0, 30))
         
@@ -404,17 +407,10 @@ class KeepaTrackerApp:
             
             # IMPORTANT: Enable resizing so user can expand the window
             manager_window.resizable(True, True)
-            
-            # Set minimum size
-            manager_window.minsize(800, 600)
 
-            # Center the window on the same screen as the parent
-            manager_window.update_idletasks()
-            screen_width = manager_window.winfo_screenwidth()
-            screen_height = manager_window.winfo_screenheight()
-            window_width = min(int(screen_width * 0.75), 1200)
-            window_height = min(int(screen_height * 0.75), 900)
-            center_window_on_parent(manager_window, self.root, window_width, window_height)
+            # Size to parent's monitor and center over the parent
+            size_and_center_on_parent(manager_window, self.root, 1200, 900)
+            clamp_minsize(manager_window, 800, 600)
 
             # Load current ASIN lists
             lists_data = load_all_asin_lists()
@@ -471,7 +467,7 @@ class KeepaTrackerApp:
 
             ttk.Label(add_asins_frame, text="Paste ASINs (comma, space, or newline separated):").pack(anchor=tk.W)
 
-            asin_text = tk.Text(add_asins_frame, height=10, width=70)
+            asin_text = tk.Text(add_asins_frame, height=10, width=55)
             asin_text.pack(fill=tk.BOTH, expand=True, pady=(5, 10))
 
             def add_asins():
