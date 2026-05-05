@@ -1040,11 +1040,17 @@ class KeepaTrackerApp:
         dialog.title("Settings")
         dialog.transient(self.root)
         dialog.grab_set()
-        dialog.resizable(False, False)
-        size_and_center_on_parent(dialog, self.root, 460, 360)
+        dialog.resizable(True, True)
+        size_and_center_on_parent(dialog, self.root, scaled(480), scaled(420))
+        clamp_minsize(dialog, scaled(360), scaled(320))
 
         frame = ttk.Frame(dialog, padding="20")
         frame.pack(fill=tk.BOTH, expand=True)
+
+        # Button row is packed first at the bottom so it stays visible even
+        # when the content above grows with high UI scales or small windows.
+        button_row = ttk.Frame(frame)
+        button_row.pack(side=tk.BOTTOM, fill=tk.X, pady=(20, 0))
 
         ttk.Label(
             frame,
@@ -1100,9 +1106,6 @@ class KeepaTrackerApp:
             textvariable=custom_var, width=6,
         )
         custom_entry.pack(side=tk.LEFT, padx=(8, 0))
-
-        button_row = ttk.Frame(frame)
-        button_row.pack(fill=tk.X, pady=(20, 0))
 
         def apply_and_close():
             choice = choice_var.get()
