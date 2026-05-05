@@ -12,7 +12,10 @@ import pandas as pd
 import requests
 
 from asin_manager import load_all_asin_lists
-from window_utils import center_window_on_parent, scaled_font, scaled
+from window_utils import (
+    center_window_on_parent, scaled_font, scaled,
+    size_and_center_on_parent, clamp_minsize,
+)
 
 
 class PriceHistoryStore:
@@ -281,15 +284,10 @@ class CompetitorPriceTracker:
         self.window = tk.Toplevel(parent_window) if parent_window else tk.Tk()
         self.window.title("Competitor ASIN Price Tracker")
         self.window.resizable(True, True)
-        self.window.minsize(1200, 820)
 
-        # Size and position window on the same screen as the parent
-        self.window.update_idletasks()
-        screen_width = self.window.winfo_screenwidth()
-        screen_height = self.window.winfo_screenheight()
-        width = min(int(screen_width * 0.95), 1500)
-        height = min(int(screen_height * 0.92), 980)
-        center_window_on_parent(self.window, parent_window, width, height)
+        # Size and position window on the parent's monitor
+        size_and_center_on_parent(self.window, parent_window, 1500, 980, max_frac=0.95)
+        clamp_minsize(self.window, 1200, 820)
 
         self.window.lift()
         self.window.attributes("-topmost", True)

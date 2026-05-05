@@ -17,7 +17,10 @@ import pandas as pd
 from asin_manager import (
     load_saved_asins, load_all_asin_lists, validate_asin, validate_asin_list
 )
-from window_utils import center_window_on_parent, scaled_font, scaled
+from window_utils import (
+    center_window_on_parent, scaled_font, scaled,
+    size_and_center_on_parent, clamp_minsize,
+)
 
 
 # Amazon's seller ID constant (used for identifying Amazon as buybox owner)
@@ -616,17 +619,10 @@ class DebugViewer:
         
         # IMPORTANT: Enable resizing so user can expand the window
         result_root.resizable(True, True)
-        
-        # Set minimum size
-        result_root.minsize(900, 700)
-        
-        # Center the window on the same screen as the parent
-        result_root.update_idletasks()
-        screen_width = result_root.winfo_screenwidth()
-        screen_height = result_root.winfo_screenheight()
-        window_width = min(int(screen_width * 0.85), 1600)
-        window_height = min(int(screen_height * 0.85), 1000)
-        center_window_on_parent(result_root, parent_window, window_width, window_height)
+
+        # Size and position window on the parent's monitor
+        size_and_center_on_parent(result_root, parent_window, 1600, 1000, max_frac=0.85)
+        clamp_minsize(result_root, 900, 700)
 
         # Show window on top initially
         result_root.lift()
@@ -661,7 +657,7 @@ class DebugViewer:
             raw_info.pack(anchor=tk.W, pady=(0, 10))
             
             # Create scrolled text widget for raw data
-            raw_text = scrolledtext.ScrolledText(raw_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 9))
+            raw_text = scrolledtext.ScrolledText(raw_frame, wrap=tk.WORD, width=80, height=25, font=scaled_font("Consolas", 9))
             raw_text.pack(fill=tk.BOTH, expand=True)
             
             # Format and display raw data as pretty JSON
@@ -689,7 +685,7 @@ class DebugViewer:
             processed_info.pack(anchor=tk.W, pady=(0, 10))
             
             # Create scrolled text widget for processed data
-            processed_text = scrolledtext.ScrolledText(processed_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 9))
+            processed_text = scrolledtext.ScrolledText(processed_frame, wrap=tk.WORD, width=80, height=25, font=scaled_font("Consolas", 9))
             processed_text.pack(fill=tk.BOTH, expand=True)
             
             # Format and display processed data
@@ -705,7 +701,7 @@ class DebugViewer:
         summary_frame = ttk.Frame(notebook, padding="15")
         notebook.add(summary_frame, text="Summary")
         
-        summary_text = scrolledtext.ScrolledText(summary_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 10))
+        summary_text = scrolledtext.ScrolledText(summary_frame, wrap=tk.WORD, width=80, height=25, font=scaled_font("Consolas", 10))
         summary_text.pack(fill=tk.BOTH, expand=True)
         
         # Generate summary
@@ -832,17 +828,10 @@ class DebugViewer:
         
         # IMPORTANT: Enable resizing so user can expand the window
         result_root.resizable(True, True)
-        
-        # Set minimum size
-        result_root.minsize(900, 700)
-        
-        # Center the window on the same screen as the parent
-        result_root.update_idletasks()
-        screen_width = result_root.winfo_screenwidth()
-        screen_height = result_root.winfo_screenheight()
-        window_width = min(int(screen_width * 0.85), 1600)
-        window_height = min(int(screen_height * 0.85), 1000)
-        center_window_on_parent(result_root, parent_window, window_width, window_height)
+
+        # Size and position window on the parent's monitor
+        size_and_center_on_parent(result_root, parent_window, 1600, 1000, max_frac=0.85)
+        clamp_minsize(result_root, 900, 700)
 
         # Show window on top initially
         result_root.lift()
@@ -865,7 +854,7 @@ class DebugViewer:
         diag_frame = ttk.Frame(notebook, padding="15")
         notebook.add(diag_frame, text="🔍 Diagnostic Summary")
         
-        diag_text = scrolledtext.ScrolledText(diag_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 10))
+        diag_text = scrolledtext.ScrolledText(diag_frame, wrap=tk.WORD, width=80, height=25, font=scaled_font("Consolas", 10))
         diag_text.pack(fill=tk.BOTH, expand=True)
         
         # Generate diagnostic summary
@@ -988,7 +977,7 @@ class DebugViewer:
             raw_info.pack(anchor=tk.W, pady=(0, 10))
             
             # Create scrolled text widget for raw data
-            raw_text = scrolledtext.ScrolledText(raw_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 9))
+            raw_text = scrolledtext.ScrolledText(raw_frame, wrap=tk.WORD, width=80, height=25, font=scaled_font("Consolas", 9))
             raw_text.pack(fill=tk.BOTH, expand=True)
             
             # Format and display raw data as pretty JSON
@@ -1016,7 +1005,7 @@ class DebugViewer:
             processed_info.pack(anchor=tk.W, pady=(0, 10))
             
             # Create scrolled text widget for processed data
-            processed_text = scrolledtext.ScrolledText(processed_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 9))
+            processed_text = scrolledtext.ScrolledText(processed_frame, wrap=tk.WORD, width=80, height=25, font=scaled_font("Consolas", 9))
             processed_text.pack(fill=tk.BOTH, expand=True)
             
             # Format and display processed data
@@ -1033,7 +1022,7 @@ class DebugViewer:
             sample_frame = ttk.Frame(notebook, padding="15")
             notebook.add(sample_frame, text="📋 Sample Data")
             
-            sample_text = scrolledtext.ScrolledText(sample_frame, wrap=tk.WORD, width=100, height=30, font=scaled_font("Consolas", 10))
+            sample_text = scrolledtext.ScrolledText(sample_frame, wrap=tk.WORD, width=80, height=25, font=scaled_font("Consolas", 10))
             sample_text.pack(fill=tk.BOTH, expand=True)
             
             sample_lines = []

@@ -17,7 +17,10 @@ from asin_manager import (
     add_asins_to_saved_list,
     update_asin_product_types
 )
-from window_utils import center_window_on_parent, scaled_font, scaled
+from window_utils import (
+    center_window_on_parent, scaled_font, scaled,
+    size_and_center_on_parent, clamp_minsize,
+)
 
 
 class SalesRankAnalyzer:
@@ -745,23 +748,13 @@ class SalesRankAnalyzer:
         if parent_window:
             result_root.transient()  # Clear transient relationship
 
-        # Size and position window on the same screen as the parent
-        result_root.update_idletasks()
-        screen_width = result_root.winfo_screenwidth()
-        screen_height = result_root.winfo_screenheight()
-
+        # Size and position window on the parent's monitor
         if len(asins) == 1:
-            # Single ASIN: Use 70% of screen dimensions
-            window_width = min(int(screen_width * 0.70), 1200)
-            window_height = min(int(screen_height * 0.70), 900)
-            result_root.minsize(700, 500)
+            size_and_center_on_parent(result_root, parent_window, 1200, 900, max_frac=0.70)
+            clamp_minsize(result_root, 700, 500)
         else:
-            # Batch: Use 95% of screen dimensions
-            window_width = min(int(screen_width * 0.95), 1920)
-            window_height = min(int(screen_height * 0.90), 1080)
-            result_root.minsize(1200, 800)
-
-        center_window_on_parent(result_root, parent_window, window_width, window_height)
+            size_and_center_on_parent(result_root, parent_window, 1920, 1080, max_frac=0.95)
+            clamp_minsize(result_root, 1200, 800)
 
         # Show window on top initially
         result_root.lift()
