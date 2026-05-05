@@ -13,6 +13,7 @@ from buybox_analyzer import BuyboxAnalyzer
 from sales_rank_module import SalesRankAnalyzer
 from debug_mode import DebugViewer
 from competitor_price_tracker import CompetitorPriceTracker
+from walmart_price_tracker import WalmartPriceTracker
 from delivery_speed_tracker import DeliverySpeedTracker
 from asin_manager import (
     load_all_asin_lists, save_asin_lists, validate_asin_list,
@@ -49,6 +50,7 @@ class KeepaTrackerApp:
         self.debug_viewer = DebugViewer(KEEPA_API_KEY)
         self.competitor_price_tracker = CompetitorPriceTracker(KEEPA_API_KEY)
         self.delivery_speed_tracker = DeliverySpeedTracker()
+        self.walmart_tracker = WalmartPriceTracker()
     
     def create_main_menu(self):
         """
@@ -166,6 +168,23 @@ class KeepaTrackerApp:
             foreground="gray"
         )
         competitor_price_desc.pack(pady=(0, 10))
+
+        # Walmart Price Tracker Button
+        walmart_price_btn = ttk.Button(
+            button_frame,
+            text="Walmart Price Tracker",
+            command=self.run_walmart_tracker,
+            width=25
+        )
+        walmart_price_btn.pack(pady=10)
+
+        walmart_price_desc = ttk.Label(
+            button_frame,
+            text="Track Walmart IP prices and sellers with history",
+            font=scaled_font("Arial", 9),
+            foreground="gray"
+        )
+        walmart_price_desc.pack(pady=(0, 10))
 
         # Delivery Speed by ZIP Button
         delivery_speed_btn = ttk.Button(
@@ -380,6 +399,17 @@ class KeepaTrackerApp:
             messagebox.showerror(
                 "Error",
                 f"An error occurred in Competitor Price Tracker:\n{str(e)}",
+                parent=self.root
+            )
+
+    def run_walmart_tracker(self):
+        """Opens the Walmart IP price tracker window."""
+        try:
+            self.walmart_tracker.open_window(parent=self.root)
+        except Exception as e:
+            messagebox.showerror(
+                "Error",
+                f"An error occurred in Walmart Price Tracker:\n{str(e)}",
                 parent=self.root
             )
 
