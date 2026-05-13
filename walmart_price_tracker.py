@@ -6,6 +6,8 @@ and visualizes price history. Mirrors the CompetitorPriceTracker pattern.
 
 import queue
 import random
+import json
+import re
 import sqlite3
 import threading
 import time
@@ -22,6 +24,13 @@ from window_utils import (
     size_and_center_on_parent, clamp_minsize,
 )
 
+try:
+    import seleniumbase
+    from seleniumbase import SB
+    HAS_SELENIUMBASE = True
+except ImportError:
+    SB = None
+    HAS_SELENIUMBASE = False
 
 # ---------------------------------------------------------------------------
 # Storage
@@ -185,15 +194,15 @@ class WalmartPriceStore:
 
 class WalmartScraper:
     """
-    Scrapes current price and seller from Walmart product pages using Playwright.
+    Scrapes current price and seller from Walmart product pages using SeleniumBase.
     Must be called from a background thread — never from the tkinter main thread.
     """
 
     BASE_URL = "https://www.walmart.com/ip/{ip_number}"
-    SCRAPE_DELAY_SECONDS = (2, 4)
+    SCRAPE_DELAY_SECONDS = (8, 15)
 
     def _make_result(self, ip_number, title=None, price=None, seller=None,
-                     error=None, error_code=None):
+                     error=None, error_code=None, debug=None):
         return {
             "ip_number": ip_number,
             "title": title or f"IP {ip_number}",
@@ -201,145 +210,401 @@ class WalmartScraper:
             "seller": seller or "",
             "error": error,
             "error_code": error_code,
+            "debug": debug or "",
         }
 
-    def _scrape_ip(self, page, ip_number, stop_flag):
-        if stop_flag[0]:
-            return self._make_result(ip_number, error="Stopped by user", error_code="STOPPED")
-
-        url = self.BASE_URL.format(ip_number=ip_number)
+    def _safe_get_text(self, sb, selector):
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        except Exception as exc:
-            return self._make_result(ip_number, error=str(exc), error_code="TIMEOUT")
-
-        # Detect bot-block / CAPTCHA
-        try:
-            page_content = page.content()
-            if any(k in page_content for k in ("captcha", "px-captcha", "Access Denied", "Robot Check")):
-                return self._make_result(ip_number, error="Bot detection triggered", error_code="BLOCKED")
+            if sb.is_element_present(selector):
+                return sb.get_text(selector).strip()
         except Exception:
-            pass
+            return ""
+        return ""
 
-        # Wait for price to appear
-        try:
-            page.wait_for_selector("[itemprop='price'], [data-testid='price-wrap']", timeout=15000)
-        except Exception:
-            # Check for 404 / unavailable
+    def _extract_price_from_text(self, raw_text):
+        if raw_text is None:
+            return None
+        raw = str(raw_text).replace(",", " ")
+        for token in re.findall(r"\d+(?:\.\d{1,2})?", raw):
             try:
-                body = page.inner_text("body")
-                if any(k in body for k in ("Item not available", "We couldn't find", "404")):
-                    return self._make_result(ip_number, error="Item not found", error_code="NOT_FOUND")
-            except Exception:
-                pass
-            return self._make_result(ip_number, error="Price element not found", error_code="PARSE_ERROR")
+                value = float(token)
+            except ValueError:
+                continue
+            if value > 0:
+                return value
+        return None
 
-        # Extract title
+    def _extract_price_from_json_node(self, node):
+        if isinstance(node, list):
+            for item in node:
+                value = self._extract_price_from_json_node(item)
+                if value is not None:
+                    return value
+            return None
+
+        if isinstance(node, dict):
+            for key in ("price", "lowPrice", "highPrice"):
+                if key in node:
+                    value = self._extract_price_from_text(node.get(key))
+                    if value is not None:
+                        return value
+            for key in ("offers", "@graph", "mainEntity", "itemOffered"):
+                if key in node:
+                    value = self._extract_price_from_json_node(node.get(key))
+                    if value is not None:
+                        return value
+            for value in node.values():
+                nested = self._extract_price_from_json_node(value)
+                if nested is not None:
+                    return nested
+        return None
+
+    def _extract_price_from_json_ld(self, sb):
+        try:
+            if not sb.is_element_present("script[type='application/ld+json']"):
+                return None
+            scripts = sb.find_elements("script[type='application/ld+json']")
+        except Exception:
+            return None
+
+        for script in scripts:
+            try:
+                payload = script.get_attribute("innerHTML")
+                if not payload:
+                    continue
+                data = json.loads(payload)
+            except Exception:
+                continue
+            value = self._extract_price_from_json_node(data)
+            if value is not None:
+                return value
+        return None
+
+    def _extract_title(self, sb, ip_number):
         title = f"IP {ip_number}"
         for sel in (
             "[itemprop='name']",
             "[data-testid='product-title']",
             "h1",
+            "[data-automation-id='product-title']",
         ):
-            try:
-                el = page.query_selector(sel)
-                if el:
-                    text = (el.inner_text() or "").strip()
-                    if text:
-                        title = text
-                        break
-            except Exception:
-                continue
+            text = self._safe_get_text(sb, sel)
+            if text:
+                return text
+        try:
+            page_title = sb.get_title()
+        except Exception:
+            page_title = ""
+        if page_title:
+            return page_title.replace(" - Walmart.com", "").strip()
+        return title
 
-        # Fallback title from <title> tag
-        if title == f"IP {ip_number}":
-            try:
-                page_title = page.title()
-                if page_title:
-                    title = page_title.replace(" - Walmart.com", "").strip()
-            except Exception:
-                pass
+    def _extract_price_from_next_data(self, sb):
+        """
+        Walmart embeds product data in <script id="__NEXT_DATA__">.
+        Pull the canonical current price from there.
 
-        # Extract price — try selectors in priority order, then JSON-LD
-        price = None
+        Preferred path: props.pageProps.initialData.data.product.priceInfo.currentPrice.price
+        Fallback path:  props.pageProps.initialData.data.product.conditionOffers[0].price.price
+        Last resort:    recursive scan of the parsed JSON for price-shaped values.
+        """
+        try:
+            if not sb.is_element_present("script#__NEXT_DATA__"):
+                return None
+            raw = sb.execute_script(
+                "var el=document.getElementById('__NEXT_DATA__');"
+                "return el ? el.textContent : null;"
+            )
+            if not raw:
+                return None
+            data = json.loads(raw)
+        except Exception:
+            return None
+
+        try:
+            product = data["props"]["pageProps"]["initialData"]["data"]["product"]
+        except (KeyError, TypeError):
+            product = None
+
+        if isinstance(product, dict):
+            price_info = product.get("priceInfo") or {}
+            current_price = price_info.get("currentPrice") or {}
+            value = current_price.get("price")
+            if isinstance(value, (int, float)) and value > 0:
+                return float(value)
+
+            offers = product.get("conditionOffers") or []
+            if isinstance(offers, list) and offers:
+                first_offer = offers[0] or {}
+                offer_price = first_offer.get("price") or {}
+                value = offer_price.get("price") if isinstance(offer_price, dict) else None
+                if isinstance(value, (int, float)) and value > 0:
+                    return float(value)
+
+        return self._extract_price_from_json_node(data)
+
+    def _extract_price(self, sb):
+        # 1) Canonical source — Walmart's embedded Next.js state.
+        price = self._extract_price_from_next_data(sb)
+        if price is not None:
+            return price, "next-data"
+
+        # 2) DOM fallback — current Walmart PDP price-bearing containers.
         price_selectors = [
             "[itemprop='price']",
-            "[data-testid='price-wrap'] span",
+            "span[itemprop='price']",
+            "[data-fs-element='price']",
+            "[data-automation-id='product-price']",
+            "[data-testid='price-wrap'] [itemprop='price']",
+            "[data-testid='price-wrap'] [data-automation-id='product-price']",
+            "[data-testid='price-wrap']",
+            "[data-testid='hero-price-container']",
+            "[data-testid='product-price']",
+            "[data-testid='min-max-price']",
+            "[data-testid='price-current']",
             "span[class*='price-characteristic']",
         ]
+
         for sel in price_selectors:
             try:
-                el = page.query_selector(sel)
-                if el:
-                    # Prefer the 'content' attribute (schema.org), then inner text
-                    raw = el.get_attribute("content") or el.inner_text()
-                    raw = raw.replace("$", "").replace(",", "").strip()
-                    price = float(raw)
-                    break
+                if not sb.is_element_present(sel):
+                    continue
             except Exception:
                 continue
 
-        # JSON-LD fallback
-        if price is None:
+            raw = None
+            # `get_attribute` raises in seleniumbase when the attribute is absent.
+            # Isolate it so we always fall through to `get_text`.
             try:
-                import json as _json
-                scripts = page.query_selector_all("script[type='application/ld+json']")
-                for script in scripts:
-                    try:
-                        data = _json.loads(script.inner_text())
-                        if isinstance(data, dict) and "offers" in data:
-                            offers = data["offers"]
-                            if isinstance(offers, list):
-                                offers = offers[0]
-                            raw = str(offers.get("price", "")).replace("$", "").replace(",", "")
-                            if raw:
-                                price = float(raw)
-                                break
-                        elif isinstance(data, dict) and "price" in data:
-                            raw = str(data["price"]).replace("$", "").replace(",", "")
-                            if raw:
-                                price = float(raw)
-                                break
-                    except Exception:
-                        continue
+                raw = sb.get_attribute(sel, "content")
             except Exception:
-                pass
+                raw = None
+            if not raw:
+                try:
+                    raw = sb.get_text(sel)
+                except Exception:
+                    raw = None
 
-        if price is None:
-            return self._make_result(ip_number, title=title, error="Price not found on page", error_code="PARSE_ERROR")
+            price = self._extract_price_from_text(raw)
+            if price is not None:
+                return price, f"selector:{sel}"
 
-        # Extract seller
+        # 3) Legacy JSON-LD fallback (Walmart no longer emits product price here,
+        #    but keep it as a safety net for older variants).
+        price = self._extract_price_from_json_ld(sb)
+        if price is not None:
+            return price, "json-ld"
+        return None, "none"
+
+    def _has_product_markers(self, sb):
+        """
+        Strong PDP markers only. Bare h1 and [itemprop='name'] also appear on
+        Walmart's 404 page, so they cannot be trusted as PDP evidence.
+        """
+        product_selectors = (
+            "[data-testid='product-title']",
+            "[data-automation-id='product-title']",
+            "[itemprop='price']",
+            "[data-testid='price-wrap']",
+            "[data-automation-id='product-price']",
+            "[data-fs-element='price']",
+            "[data-automation-id='add-to-cart-button']",
+            "button[aria-label*='Add to cart']",
+        )
+        for sel in product_selectors:
+            try:
+                if sb.is_element_present(sel):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _detect_challenge(self, sb):
+        signals = []
+        source = ""
+        body = ""
+        title = ""
+        current_url = ""
+
+        try:
+            source = sb.get_page_source() or ""
+        except Exception:
+            source = ""
+        try:
+            body = sb.get_text("body") or ""
+        except Exception:
+            body = ""
+        try:
+            title = sb.get_title() or ""
+        except Exception:
+            title = ""
+        try:
+            current_url = sb.get_current_url() or ""
+        except Exception:
+            current_url = ""
+
+        combined = " ".join((source.lower(), body.lower(), title.lower()))
+        strict_phrases = (
+            "verify you are human",
+            "robot check",
+            "unusual traffic",
+            "px-captcha",
+            "press and hold",
+            "access denied",
+        )
+        for phrase in strict_phrases:
+            if phrase in combined:
+                signals.append(phrase)
+
+        for sel in (
+            "iframe[src*='captcha']",
+            "[id*='px-captcha']",
+            "[class*='px-captcha']",
+            "form[action*='captcha']",
+        ):
+            try:
+                if sb.is_element_present(sel):
+                    signals.append(f"selector:{sel}")
+            except Exception:
+                continue
+
+        if "captcha" in current_url.lower():
+            signals.append("url:captcha")
+
+        unique_signals = sorted(set(signals))
+        high_confidence = len(unique_signals) >= 2
+        return {
+            "high_confidence": high_confidence,
+            "suspicious": bool(unique_signals),
+            "signal_count": len(unique_signals),
+            "signals": unique_signals,
+        }
+
+    def _wait_for_product_ready(self, sb):
+        readiness_selectors = (
+            "[data-testid='product-title']",
+            "h1",
+            "[itemprop='name']",
+            "[itemprop='price']",
+            "[data-testid='price-wrap']",
+            "[data-testid='buy-box-container']",
+        )
+        for _ in range(4):
+            for sel in readiness_selectors:
+                try:
+                    if sb.is_element_present(sel):
+                        return True
+                except Exception:
+                    continue
+            try:
+                sb.wait_for_element_present(
+                    "[data-testid='product-title'], h1, [itemprop='price'], [data-testid='price-wrap']",
+                    timeout=4,
+                )
+                return True
+            except Exception:
+                continue
+        return self._has_product_markers(sb)
+
+    def _extract_seller(self, sb):
         seller = "Walmart.com"
         seller_selectors = [
             "[data-testid='seller-info'] a",
             "[data-testid='seller-name']",
             "span[class*='seller']",
+            "[data-testid='product-seller-info'] a",
         ]
         for sel in seller_selectors:
-            try:
-                el = page.query_selector(sel)
-                if el:
-                    text = (el.inner_text() or "").strip()
-                    if text:
-                        seller = text
-                        break
-            except Exception:
-                continue
+            text = self._safe_get_text(sb, sel)
+            if text:
+                return text
 
-        # "Sold by" text search fallback
-        if seller == "Walmart.com":
+        try:
+            if sb.is_text_visible("Sold by", "body"):
+                elements = sb.find_elements("//*[contains(text(), 'Sold by')]")
+                for el in elements:
+                    parent_text = el.text.strip()
+                    if "Sold by" not in parent_text:
+                        continue
+                    seller_part = parent_text.split("Sold by", 1)[-1].strip()
+                    if seller_part:
+                        return seller_part
+        except Exception:
+            pass
+        return seller
+
+    def _scrape_ip(self, sb, ip_number, stop_flag):
+        if stop_flag[0]:
+            return self._make_result(ip_number, error="Stopped by user", error_code="STOPPED")
+
+        url = self.BASE_URL.format(ip_number=ip_number)
+        try:
+            sb.uc_open_with_reconnect(url, 4)
+        except Exception as exc:
+            return self._make_result(ip_number, error=str(exc), error_code="TIMEOUT")
+
+        challenge_before = self._detect_challenge(sb)
+        if challenge_before["suspicious"] and not self._has_product_markers(sb):
             try:
-                sold_by_el = page.get_by_text("Sold by", exact=False).first
-                if sold_by_el:
-                    parent_text = sold_by_el.inner_text().strip()
-                    if "Sold by" in parent_text:
-                        seller_part = parent_text.split("Sold by", 1)[-1].strip()
-                        if seller_part:
-                            seller = seller_part
+                print("Challenge detected. Solve it in the browser window if prompted...")
+                sb.sleep(30)
             except Exception:
                 pass
+            challenge_after = self._detect_challenge(sb)
+            if challenge_after["high_confidence"] and not self._has_product_markers(sb):
+                return self._make_result(
+                    ip_number,
+                    error="Bot detection triggered",
+                    error_code="BLOCKED",
+                    debug="challenge=" + ",".join(challenge_after["signals"]),
+                )
 
-        return self._make_result(ip_number, title=title, price=price, seller=seller)
+        page_ready = self._wait_for_product_ready(sb)
+        title = self._extract_title(sb, ip_number)
+        not_found_title_phrases = (
+            "we couldn't find this page",
+            "we couldn\u2019t find this page",
+            "page not found",
+            "item not available",
+        )
+        title_lower = (title or "").lower().strip()
+        if not self._has_product_markers(sb) and any(
+            phrase in title_lower for phrase in not_found_title_phrases
+        ):
+            return self._make_result(
+                ip_number, title=title, error="Item not found", error_code="NOT_FOUND"
+            )
+
+        if not page_ready:
+            return self._make_result(
+                ip_number,
+                title=title,
+                error="Product page loaded but key content did not render in time",
+                error_code="PARSE_TIMEOUT",
+            )
+
+        price, price_strategy = self._extract_price(sb)
+        if price is None:
+            debug_bits = [f"price_strategy={price_strategy}"]
+            challenge_now = self._detect_challenge(sb)
+            if challenge_now["suspicious"]:
+                debug_bits.append("challenge=" + ",".join(challenge_now["signals"]))
+            return self._make_result(
+                ip_number,
+                title=title,
+                error="Product page loaded but no parseable price was found",
+                error_code="PRICE_NOT_FOUND",
+                debug=" | ".join(debug_bits),
+            )
+
+        seller = self._extract_seller(sb)
+        return self._make_result(
+            ip_number,
+            title=title,
+            price=price,
+            seller=seller,
+            debug=f"price_strategy={price_strategy}",
+        )
 
     def run_batch(self, ip_entries, progress_callback, stop_flag):
         """
@@ -353,70 +618,42 @@ class WalmartScraper:
         Returns:
             list of result dicts with 'list_name' added
         """
-        try:
-            from playwright.sync_api import sync_playwright
-        except ImportError:
+        if not HAS_SELENIUMBASE:
             raise RuntimeError(
-                "Playwright is not installed.\n"
-                "Run: pip install playwright playwright-stealth && playwright install chromium"
+                "SeleniumBase is not installed.\n"
+                "Run: pip install seleniumbase"
             )
 
         results = []
 
-        with sync_playwright() as pw:
-            browser = pw.chromium.launch(
-                headless=True,
-                args=["--disable-blink-features=AutomationControlled"],
-            )
-            context = browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1920, "height": 1080},
-                locale="en-US",
-                timezone_id="America/New_York",
-            )
-            page = context.new_page()
+        try:
+            with SB(uc=True, headless=False) as sb:
+                total = len(ip_entries)
+                for idx, (list_name, ip_number) in enumerate(ip_entries, start=1):
+                    if stop_flag[0]:
+                        break
+                    progress_callback(idx, total, list_name, ip_number)
+                    try:
+                        result = self._scrape_ip(sb, ip_number, stop_flag)
+                    except Exception as exc:
+                        result = self._make_result(
+                            ip_number, error=str(exc), error_code="EXCEPTION"
+                        )
 
-            # Apply stealth patch if available
-            try:
-                from playwright_stealth import Stealth
-                Stealth().apply_stealth_sync(page)
-            except (ImportError, Exception):
-                pass
+                    # Abort only when challenge signals remain high confidence.
+                    if result.get("error_code") == "BLOCKED":
+                        result["list_name"] = list_name
+                        results.append(result)
+                        break
 
-            total = len(ip_entries)
-            for idx, (list_name, ip_number) in enumerate(ip_entries, start=1):
-                if stop_flag[0]:
-                    break
-                progress_callback(idx, total, list_name, ip_number)
-                try:
-                    result = self._scrape_ip(page, ip_number, stop_flag)
-                except Exception as exc:
-                    result = self._make_result(
-                        ip_number, error=str(exc), error_code="EXCEPTION"
-                    )
-
-                # Abort the whole batch on hard bot-block
-                if result.get("error_code") == "BLOCKED":
                     result["list_name"] = list_name
                     results.append(result)
-                    break
 
-                result["list_name"] = list_name
-                results.append(result)
-
-                if idx < total and not stop_flag[0]:
-                    delay = random.uniform(*self.SCRAPE_DELAY_SECONDS)
-                    time.sleep(delay)
-
-            try:
-                context.close()
-                browser.close()
-            except Exception:
-                pass
+                    if idx < total and not stop_flag[0]:
+                        delay = random.uniform(*self.SCRAPE_DELAY_SECONDS)
+                        time.sleep(delay)
+        except Exception as e:
+            return [{"ip_number": "", "list_name": "", "error": f"Failed to launch browser: {str(e)}", "error_code": "EXCEPTION"}]
 
         return results
 
@@ -455,16 +692,13 @@ class WalmartPriceTracker:
         self._stop_flag = [False]
 
     def open_window(self, parent=None):
-        # Verify Playwright is importable before opening the window
-        try:
-            import playwright  # noqa: F401
-        except ImportError:
+        # Verify SeleniumBase is importable before opening the window
+        if not HAS_SELENIUMBASE:
             messagebox.showerror(
-                "Playwright Not Installed",
-                "Playwright is required for Walmart price scraping.\n\n"
+                "SeleniumBase Not Installed",
+                "SeleniumBase is required for Walmart price scraping.\n\n"
                 "Install it with:\n"
-                "  pip install playwright playwright-stealth\n"
-                "  playwright install chromium",
+                "  pip install seleniumbase undetected-chromedriver",
                 parent=parent,
             )
             return

@@ -6,3 +6,5 @@ screeninfo
 pytz
 playwright
 playwright-stealth
+seleniumbase
+undetected-chromedriver
