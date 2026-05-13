@@ -14,14 +14,20 @@ import time
 import webbrowser
 from datetime import datetime
 import tkinter as tk
-from tkinter import filedialog, ttk, messagebox
+from tkinter import filedialog, simpledialog, ttk, messagebox
 
 import pandas as pd
 
 from walmart_ip_manager import load_all_ip_lists
+from walmart_zip_switcher import WalmartZipSwitcher
 from window_utils import (
     scaled_font, scaled,
     size_and_center_on_parent, clamp_minsize,
+)
+from zip_list_manager import (
+    load_all_zip_lists,
+    parse_zip_list,
+    save_zip_list,
 )
 
 try:
@@ -59,13 +65,30 @@ class WalmartPriceStore:
                     seller     TEXT NOT NULL DEFAULT '',
                     price      REAL NOT NULL,
                     currency   TEXT NOT NULL DEFAULT 'USD',
+                    zip_code   TEXT NOT NULL DEFAULT '',
                     tracked_at TEXT NOT NULL
                 )
                 """
             )
+
+            # Idempotent migration: older databases predate the zip_code column.
+            # Detect via PRAGMA and ADD COLUMN with a safe default so existing
+            # rows become legacy (zip_code='') entries.
+            cursor.execute("PRAGMA table_info(walmart_price_logs)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+            if "zip_code" not in existing_columns:
+                cursor.execute(
+                    "ALTER TABLE walmart_price_logs "
+                    "ADD COLUMN zip_code TEXT NOT NULL DEFAULT ''"
+                )
+
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_walmart_ip_list "
                 "ON walmart_price_logs(ip_number, list_name)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_walmart_ip_list_zip "
+                "ON walmart_price_logs(ip_number, list_name, zip_code)"
             )
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_walmart_tracked_at "
@@ -73,83 +96,139 @@ class WalmartPriceStore:
             )
             conn.commit()
 
-    def log_price(self, list_name, ip_number, title, seller, price, currency="USD", tracked_at=None):
+    def log_price(self, list_name, ip_number, title, seller, price,
+                  currency="USD", zip_code="", tracked_at=None):
         tracked_at = tracked_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        zip_code = (zip_code or "").strip()
         with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
                 INSERT INTO walmart_price_logs
-                    (list_name, ip_number, title, seller, price, currency, tracked_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (list_name, ip_number, title, seller, price,
+                     currency, zip_code, tracked_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (list_name, ip_number, title, seller, price, currency, tracked_at),
+                (list_name, ip_number, title, seller, price,
+                 currency, zip_code, tracked_at),
             )
             conn.commit()
 
-    def get_latest_price_record(self, ip_number, list_name):
+    def get_latest_price_record(self, ip_number, list_name, zip_code=""):
+        zip_code = (zip_code or "").strip()
         with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT ip_number, title, seller, price, currency, tracked_at
+                SELECT ip_number, title, seller, price, currency, zip_code, tracked_at
                 FROM walmart_price_logs
-                WHERE ip_number = ? AND list_name = ?
+                WHERE ip_number = ? AND list_name = ? AND zip_code = ?
                 ORDER BY id DESC
                 LIMIT 1
                 """,
-                (ip_number, list_name),
+                (ip_number, list_name, zip_code),
             )
             row = cursor.fetchone()
         if not row:
             return None
         return {"ip_number": row[0], "title": row[1], "seller": row[2],
-                "price": row[3], "currency": row[4], "tracked_at": row[5]}
+                "price": row[3], "currency": row[4],
+                "zip_code": row[5], "tracked_at": row[6]}
 
-    def get_previous_price_record(self, ip_number, list_name):
+    def get_previous_price_record(self, ip_number, list_name, zip_code=""):
+        zip_code = (zip_code or "").strip()
         with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT ip_number, title, seller, price, currency, tracked_at
+                SELECT ip_number, title, seller, price, currency, zip_code, tracked_at
                 FROM walmart_price_logs
-                WHERE ip_number = ? AND list_name = ?
+                WHERE ip_number = ? AND list_name = ? AND zip_code = ?
                 ORDER BY id DESC
                 LIMIT 1 OFFSET 1
                 """,
-                (ip_number, list_name),
+                (ip_number, list_name, zip_code),
             )
             row = cursor.fetchone()
         if not row:
             return None
         return {"ip_number": row[0], "title": row[1], "seller": row[2],
-                "price": row[3], "currency": row[4], "tracked_at": row[5]}
+                "price": row[3], "currency": row[4],
+                "zip_code": row[5], "tracked_at": row[6]}
 
-    def get_price_history(self, ip_number, list_name, limit=300):
+    def get_price_history(self, ip_number, list_name, zip_code="", limit=300):
+        zip_code = (zip_code or "").strip()
         with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT tracked_at, price, seller, title, currency
+                SELECT tracked_at, price, seller, title, currency, zip_code
                 FROM walmart_price_logs
-                WHERE ip_number = ? AND list_name = ?
+                WHERE ip_number = ? AND list_name = ? AND zip_code = ?
                 ORDER BY id DESC
                 LIMIT ?
                 """,
-                (ip_number, list_name, limit),
+                (ip_number, list_name, zip_code, limit),
             )
             rows = cursor.fetchall()
         rows.reverse()
         return [
             {"tracked_at": r[0], "price": r[1], "seller": r[2],
-             "title": r[3], "currency": r[4]}
+             "title": r[3], "currency": r[4], "zip_code": r[5]}
             for r in rows
         ]
 
-    def get_price_history_rows(self, list_name=None, ip_number=None):
-        """Return rows for CSV export."""
+    def get_distinct_zips(self, list_name=None):
+        """
+        Return sorted list of ZIPs that have data, optionally filtered by list.
+
+        Args:
+            list_name (str | None): Optional list filter.
+
+        Returns:
+            list[str]: Distinct ZIP codes (may include '' for legacy rows).
+        """
+        query = "SELECT DISTINCT zip_code FROM walmart_price_logs"
+        params = []
+        if list_name:
+            query += " WHERE list_name = ?"
+            params.append(list_name)
+        with self._connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+        zips = sorted({(row[0] or "") for row in rows})
+        return zips
+
+    def get_distinct_ip_zip_pairs(self, list_name):
+        """
+        Return (ip_number, zip_code) pairs with at least one record for a list.
+
+        Args:
+            list_name (str): List filter.
+
+        Returns:
+            list[tuple[str, str]]: Sorted (ip, zip) pairs.
+        """
+        with self._connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT DISTINCT ip_number, zip_code
+                FROM walmart_price_logs
+                WHERE list_name = ?
+                ORDER BY ip_number, zip_code
+                """,
+                (list_name,),
+            )
+            rows = cursor.fetchall()
+        return [(row[0], row[1] or "") for row in rows]
+
+    def get_price_history_rows(self, list_name=None, ip_number=None, zip_code=None):
+        """Return rows for CSV export. ZIP filter accepts '' for legacy rows."""
         query = (
-            "SELECT id, list_name, ip_number, title, seller, price, currency, tracked_at "
+            "SELECT id, list_name, ip_number, title, seller, "
+            "price, currency, zip_code, tracked_at "
             "FROM walmart_price_logs"
         )
         clauses, params = [], []
@@ -159,6 +238,9 @@ class WalmartPriceStore:
         if ip_number:
             clauses.append("ip_number = ?")
             params.append(ip_number)
+        if zip_code is not None:
+            clauses.append("zip_code = ?")
+            params.append(zip_code)
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY tracked_at ASC, id ASC"
@@ -170,7 +252,7 @@ class WalmartPriceStore:
 
         export_rows = []
         for row in rows:
-            tracked_at = row[7]
+            tracked_at = row[8]
             tracked_date = tracked_hour = ""
             try:
                 dt = datetime.strptime(tracked_at, "%Y-%m-%d %H:%M:%S")
@@ -182,7 +264,8 @@ class WalmartPriceStore:
                 "record_id": row[0], "list_name": row[1], "ip_number": row[2],
                 "title": row[3], "seller": row[4],
                 "price": float(row[5]) if row[5] is not None else None,
-                "currency": row[6], "tracked_at": tracked_at,
+                "currency": row[6], "zip_code": row[7] or "",
+                "tracked_at": tracked_at,
                 "tracked_date": tracked_date, "tracked_hour": tracked_hour,
             })
         return export_rows
@@ -196,18 +279,26 @@ class WalmartScraper:
     """
     Scrapes current price and seller from Walmart product pages using SeleniumBase.
     Must be called from a background thread — never from the tkinter main thread.
+
+    Composition: a WalmartZipSwitcher handles changing Walmart's delivery ZIP
+    so this scraper stays focused on parsing PDP content.
     """
 
     BASE_URL = "https://www.walmart.com/ip/{ip_number}"
     SCRAPE_DELAY_SECONDS = (8, 15)
 
+    def __init__(self, zip_switcher=None):
+        # Dependency-inject the switcher so it can be replaced in tests.
+        self.zip_switcher = zip_switcher or WalmartZipSwitcher()
+
     def _make_result(self, ip_number, title=None, price=None, seller=None,
-                     error=None, error_code=None, debug=None):
+                     error=None, error_code=None, debug=None, zip_code=""):
         return {
             "ip_number": ip_number,
             "title": title or f"IP {ip_number}",
             "price": price,
             "seller": seller or "",
+            "zip_code": zip_code or "",
             "error": error,
             "error_code": error_code,
             "debug": debug or "",
@@ -533,15 +624,20 @@ class WalmartScraper:
             pass
         return seller
 
-    def _scrape_ip(self, sb, ip_number, stop_flag):
+    def _scrape_ip(self, sb, ip_number, stop_flag, zip_code=""):
         if stop_flag[0]:
-            return self._make_result(ip_number, error="Stopped by user", error_code="STOPPED")
+            return self._make_result(
+                ip_number, error="Stopped by user", error_code="STOPPED",
+                zip_code=zip_code,
+            )
 
         url = self.BASE_URL.format(ip_number=ip_number)
         try:
             sb.uc_open_with_reconnect(url, 4)
         except Exception as exc:
-            return self._make_result(ip_number, error=str(exc), error_code="TIMEOUT")
+            return self._make_result(
+                ip_number, error=str(exc), error_code="TIMEOUT", zip_code=zip_code,
+            )
 
         challenge_before = self._detect_challenge(sb)
         if challenge_before["suspicious"] and not self._has_product_markers(sb):
@@ -557,6 +653,7 @@ class WalmartScraper:
                     error="Bot detection triggered",
                     error_code="BLOCKED",
                     debug="challenge=" + ",".join(challenge_after["signals"]),
+                    zip_code=zip_code,
                 )
 
         page_ready = self._wait_for_product_ready(sb)
@@ -572,7 +669,8 @@ class WalmartScraper:
             phrase in title_lower for phrase in not_found_title_phrases
         ):
             return self._make_result(
-                ip_number, title=title, error="Item not found", error_code="NOT_FOUND"
+                ip_number, title=title, error="Item not found",
+                error_code="NOT_FOUND", zip_code=zip_code,
             )
 
         if not page_ready:
@@ -581,6 +679,7 @@ class WalmartScraper:
                 title=title,
                 error="Product page loaded but key content did not render in time",
                 error_code="PARSE_TIMEOUT",
+                zip_code=zip_code,
             )
 
         price, price_strategy = self._extract_price(sb)
@@ -595,6 +694,7 @@ class WalmartScraper:
                 error="Product page loaded but no parseable price was found",
                 error_code="PRICE_NOT_FOUND",
                 debug=" | ".join(debug_bits),
+                zip_code=zip_code,
             )
 
         seller = self._extract_seller(sb)
@@ -604,19 +704,30 @@ class WalmartScraper:
             price=price,
             seller=seller,
             debug=f"price_strategy={price_strategy}",
+            zip_code=zip_code,
         )
 
-    def run_batch(self, ip_entries, progress_callback, stop_flag):
+    def run_batch(self, ip_entries, zip_codes, progress_callback, stop_flag):
         """
-        Scrape a list of (list_name, ip_number) tuples.
+        Scrape (list_name, ip_number) entries across one or more ZIPs.
+
+        Iteration strategy: outer-ZIP, inner-IP. Walmart caches the location
+        in cookies for the session, so we set the ZIP once per ZIP and then
+        scrape every IP under that ZIP before moving on. This minimises the
+        number of "open sidebar / type ZIP / Save" UI steps.
 
         Args:
-            ip_entries: list of (list_name, ip_number) tuples
-            progress_callback: callable(current_idx, total, list_name, ip_number)
-            stop_flag: list with one bool element; set [0]=True to abort
+            ip_entries: list of (list_name, ip_number) tuples.
+            zip_codes:  list[str] of 5-digit ZIPs, or None/[] for the
+                        existing zip-agnostic flow (zip_code='' in results).
+            progress_callback: callable
+                (zip_idx, zip_total, ip_idx, ip_total,
+                 current_zip, list_name, ip_number)
+            stop_flag: list with one bool element; set [0]=True to abort.
 
         Returns:
-            list of result dicts with 'list_name' added
+            list of result dicts. Each result includes 'list_name' and
+            'zip_code' keys ('' when no ZIP loop is in effect).
         """
         if not HAS_SELENIUMBASE:
             raise RuntimeError(
@@ -624,36 +735,90 @@ class WalmartScraper:
                 "Run: pip install seleniumbase"
             )
 
+        # Empty/None ZIPs => one zip-agnostic pass with empty-string ZIP.
+        zip_list = [str(z).strip()[:5] for z in (zip_codes or []) if str(z).strip()]
+        if not zip_list:
+            zip_list = [""]
+
         results = []
+        ip_total = len(ip_entries)
+        zip_total = len(zip_list)
 
         try:
             with SB(uc=True, headless=False) as sb:
-                total = len(ip_entries)
-                for idx, (list_name, ip_number) in enumerate(ip_entries, start=1):
+                for zip_idx, current_zip in enumerate(zip_list, start=1):
                     if stop_flag[0]:
                         break
-                    progress_callback(idx, total, list_name, ip_number)
-                    try:
-                        result = self._scrape_ip(sb, ip_number, stop_flag)
-                    except Exception as exc:
-                        result = self._make_result(
-                            ip_number, error=str(exc), error_code="EXCEPTION"
-                        )
 
-                    # Abort only when challenge signals remain high confidence.
-                    if result.get("error_code") == "BLOCKED":
+                    # When ZIP is requested, ensure cookies are set BEFORE the
+                    # per-IP scrape loop. The location pill only appears once
+                    # we've loaded a real Walmart page, so we open the first
+                    # IP's PDP just to drive the sidebar.
+                    if current_zip:
+                        try:
+                            first_url = self.BASE_URL.format(ip_number=ip_entries[0][1])
+                            sb.uc_open_with_reconnect(first_url, 4)
+                        except Exception as exc:
+                            err_msg = f"Failed to open Walmart for ZIP switch: {exc}"
+                            for list_name, ip_number in ip_entries:
+                                err_result = self._make_result(
+                                    ip_number, error=err_msg,
+                                    error_code="ZIP_SET_FAILED",
+                                    zip_code=current_zip,
+                                )
+                                err_result["list_name"] = list_name
+                                results.append(err_result)
+                            continue
+
+                        ok, err = self.zip_switcher.set_zip(sb, current_zip)
+                        if not ok:
+                            for list_name, ip_number in ip_entries:
+                                err_result = self._make_result(
+                                    ip_number,
+                                    error=err or "ZIP switch failed",
+                                    error_code="ZIP_SET_FAILED",
+                                    zip_code=current_zip,
+                                )
+                                err_result["list_name"] = list_name
+                                results.append(err_result)
+                            continue
+
+                    blocked = False
+                    for ip_idx, (list_name, ip_number) in enumerate(ip_entries, start=1):
+                        if stop_flag[0]:
+                            break
+                        progress_callback(zip_idx, zip_total, ip_idx, ip_total,
+                                          current_zip, list_name, ip_number)
+                        try:
+                            result = self._scrape_ip(
+                                sb, ip_number, stop_flag, zip_code=current_zip
+                            )
+                        except Exception as exc:
+                            result = self._make_result(
+                                ip_number, error=str(exc),
+                                error_code="EXCEPTION", zip_code=current_zip,
+                            )
+
                         result["list_name"] = list_name
                         results.append(result)
+
+                        # Bot detection still aborts the entire batch.
+                        if result.get("error_code") == "BLOCKED":
+                            blocked = True
+                            break
+
+                        if ip_idx < ip_total and not stop_flag[0]:
+                            delay = random.uniform(*self.SCRAPE_DELAY_SECONDS)
+                            time.sleep(delay)
+
+                    if blocked:
                         break
-
-                    result["list_name"] = list_name
-                    results.append(result)
-
-                    if idx < total and not stop_flag[0]:
-                        delay = random.uniform(*self.SCRAPE_DELAY_SECONDS)
-                        time.sleep(delay)
         except Exception as e:
-            return [{"ip_number": "", "list_name": "", "error": f"Failed to launch browser: {str(e)}", "error_code": "EXCEPTION"}]
+            return [{
+                "ip_number": "", "list_name": "", "zip_code": "",
+                "error": f"Failed to launch browser: {str(e)}",
+                "error_code": "EXCEPTION",
+            }]
 
         return results
 
@@ -669,6 +834,9 @@ class WalmartPriceTracker:
     """
 
     ALL_LISTS = "All Lists"
+    NO_ZIP_FILTER_LABEL = "(No ZIP filter)"
+    ALL_ZIPS_LABEL = "All ZIPs"
+    NO_ZIP_VIEW_LABEL = "(No ZIP)"
 
     def __init__(self):
         self.store = WalmartPriceStore()
@@ -683,9 +851,18 @@ class WalmartPriceTracker:
         self.history_tree = None
         self.chart_canvas = None
 
+        # ZIP picker widgets / state
+        self.zip_list_var = None
+        self.zip_list_combo = None
+        self.zip_preview_var = None
+        self.zip_view_var = None
+        self.zip_view_combo = None
+
+        # Selected row state (note: zip_code is the third column now)
         self.selected_ip = None
         self.selected_title = None
         self.selected_row_list = None
+        self.selected_zip = ""
 
         self._tracking_thread = None
         self._queue = queue.Queue()
@@ -789,6 +966,42 @@ class WalmartPriceTracker:
         self.batch_listbox.pack(side=tk.LEFT, fill=tk.X, expand=True)
         batch_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # --- ZIP picker (optional) ---
+        # Saved ZIP lists come from zip_list_manager.py, shared with the
+        # Delivery Speed Tracker. Picking "(No ZIP filter)" keeps the original
+        # zip-agnostic flow, where rows are stored with zip_code=''.
+        zip_picker_frame = ttk.Frame(batch_frame)
+        zip_picker_frame.pack(fill=tk.X, pady=(4, 6))
+
+        ttk.Label(zip_picker_frame, text="ZIP List:").pack(side=tk.LEFT)
+        self.zip_list_var = tk.StringVar(value=self.NO_ZIP_FILTER_LABEL)
+        self.zip_list_combo = ttk.Combobox(
+            zip_picker_frame,
+            textvariable=self.zip_list_var,
+            state="readonly",
+            width=32,
+        )
+        self.zip_list_combo.pack(side=tk.LEFT, padx=(8, 8))
+        self.zip_list_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._on_zip_list_selected()
+        )
+
+        ttk.Button(
+            zip_picker_frame, text="Refresh ZIPs", command=self._refresh_zip_choices
+        ).pack(side=tk.LEFT, padx=(0, 6))
+
+        ttk.Button(
+            zip_picker_frame, text="Manage ZIP Lists...",
+            command=self._open_zip_list_manager,
+        ).pack(side=tk.LEFT)
+
+        self.zip_preview_var = tk.StringVar(value="No ZIP filter (single default-ZIP pass)")
+        ttk.Label(
+            batch_frame,
+            textvariable=self.zip_preview_var,
+            foreground="gray",
+        ).pack(anchor=tk.W, pady=(0, 4))
+
         batch_buttons = ttk.Frame(batch_frame)
         batch_buttons.pack(fill=tk.X)
 
@@ -830,8 +1043,25 @@ class WalmartPriceTracker:
         )
         results_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
+        # View ZIPs filter — narrows the results table to a specific ZIP.
+        view_zip_bar = ttk.Frame(results_frame)
+        view_zip_bar.pack(side=tk.TOP, fill=tk.X, pady=(0, 6))
+        ttk.Label(view_zip_bar, text="View ZIPs:").pack(side=tk.LEFT)
+        self.zip_view_var = tk.StringVar(value=self.ALL_ZIPS_LABEL)
+        self.zip_view_combo = ttk.Combobox(
+            view_zip_bar,
+            textvariable=self.zip_view_var,
+            state="readonly",
+            width=18,
+        )
+        self.zip_view_combo.pack(side=tk.LEFT, padx=(8, 0))
+        self.zip_view_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _e: self._refresh_latest_for_selected_list(),
+        )
+
         columns = (
-            "list_name", "ip_number", "title", "seller",
+            "list_name", "ip_number", "zip_code", "title", "seller",
             "current_price", "previous_price", "change", "tracked_at",
         )
         self.results_tree = ttk.Treeview(
@@ -839,6 +1069,7 @@ class WalmartPriceTracker:
         )
         self.results_tree.heading("list_name", text="List")
         self.results_tree.heading("ip_number", text="IP Number")
+        self.results_tree.heading("zip_code", text="ZIP")
         self.results_tree.heading("title", text="Product Title")
         self.results_tree.heading("seller", text="Seller")
         self.results_tree.heading("current_price", text="Current Price")
@@ -848,8 +1079,9 @@ class WalmartPriceTracker:
 
         self.results_tree.column("list_name", width=scaled(150), anchor=tk.W)
         self.results_tree.column("ip_number", width=scaled(140), anchor=tk.W)
-        self.results_tree.column("title", width=scaled(300), anchor=tk.W)
-        self.results_tree.column("seller", width=scaled(200), anchor=tk.W)
+        self.results_tree.column("zip_code", width=scaled(70), anchor=tk.W)
+        self.results_tree.column("title", width=scaled(280), anchor=tk.W)
+        self.results_tree.column("seller", width=scaled(180), anchor=tk.W)
         self.results_tree.column("current_price", width=scaled(100), anchor=tk.E)
         self.results_tree.column("previous_price", width=scaled(100), anchor=tk.E)
         self.results_tree.column("change", width=scaled(90), anchor=tk.E)
@@ -891,18 +1123,20 @@ class WalmartPriceTracker:
             "<Configure>", lambda _e: self._redraw_chart_for_selection()
         )
 
-        history_columns = ("tracked_at", "price", "seller", "title")
+        history_columns = ("tracked_at", "zip_code", "price", "seller", "title")
         self.history_tree = ttk.Treeview(
             details_frame, columns=history_columns, show="headings", height=8
         )
         self.history_tree.heading("tracked_at", text="Tracked At")
+        self.history_tree.heading("zip_code", text="ZIP")
         self.history_tree.heading("price", text="Price")
         self.history_tree.heading("seller", text="Seller")
         self.history_tree.heading("title", text="Product Title")
         self.history_tree.column("tracked_at", width=scaled(180), anchor=tk.W)
+        self.history_tree.column("zip_code", width=scaled(70), anchor=tk.W)
         self.history_tree.column("price", width=scaled(100), anchor=tk.E)
-        self.history_tree.column("seller", width=scaled(200), anchor=tk.W)
-        self.history_tree.column("title", width=scaled(600), anchor=tk.W)
+        self.history_tree.column("seller", width=scaled(180), anchor=tk.W)
+        self.history_tree.column("title", width=scaled(540), anchor=tk.W)
 
         history_scroll = ttk.Scrollbar(
             details_frame, orient=tk.VERTICAL, command=self.history_tree.yview
@@ -923,6 +1157,9 @@ class WalmartPriceTracker:
         self.list_combo["values"] = view_options
         self._populate_batch_listbox(list_names)
 
+        # Keep ZIP picker + View ZIPs combobox in sync with the lists view.
+        self._refresh_zip_choices()
+
         if not list_names:
             self.list_var.set("")
             self.status_var.set(
@@ -938,6 +1175,185 @@ class WalmartPriceTracker:
         elif self.list_var.get() not in view_options:
             self.list_var.set(list_names[0])
         self._refresh_latest_for_selected_list()
+
+    # ------------------------------------------------------------------
+    # ZIP picker helpers
+    # ------------------------------------------------------------------
+
+    def _refresh_zip_choices(self):
+        """Reload saved ZIP lists + rebuild the View ZIPs filter values."""
+        if self.zip_list_combo is None:
+            return
+
+        zip_lists = load_all_zip_lists()
+        names = sorted(zip_lists.keys())
+        values = [self.NO_ZIP_FILTER_LABEL] + names
+        self.zip_list_combo["values"] = values
+        if self.zip_list_var.get() not in values:
+            self.zip_list_var.set(self.NO_ZIP_FILTER_LABEL)
+        self._update_zip_preview()
+
+        if self.zip_view_combo is not None:
+            current = self.zip_view_var.get() if self.zip_view_var else self.ALL_ZIPS_LABEL
+            view_list_name = self.list_var.get().strip() if self.list_var else ""
+            list_name_filter = (
+                None if view_list_name in ("", self.ALL_LISTS) else view_list_name
+            )
+            distinct_zips = self.store.get_distinct_zips(list_name=list_name_filter)
+            options = [self.ALL_ZIPS_LABEL]
+            if "" in distinct_zips:
+                options.append(self.NO_ZIP_VIEW_LABEL)
+            for zip_code in distinct_zips:
+                if zip_code:
+                    options.append(zip_code)
+            self.zip_view_combo["values"] = options
+            if current not in options:
+                self.zip_view_var.set(self.ALL_ZIPS_LABEL)
+
+    def _on_zip_list_selected(self):
+        """Combobox handler — refresh the preview label only."""
+        self._update_zip_preview()
+
+    def _update_zip_preview(self):
+        """Render a short preview of the currently chosen ZIP list."""
+        if self.zip_preview_var is None:
+            return
+        zips = self._get_selected_zip_codes()
+        if not zips:
+            self.zip_preview_var.set(
+                "No ZIP filter (single default-ZIP pass; zip_code stored as empty)."
+            )
+            return
+        preview = ", ".join(zips[:6])
+        if len(zips) > 6:
+            preview += f" (+{len(zips) - 6} more)"
+        self.zip_preview_var.set(f"{len(zips)} ZIP(s): {preview}")
+
+    def _get_selected_zip_codes(self):
+        """Resolve the ZIP picker selection to a list of 5-digit ZIPs (or [])."""
+        if self.zip_list_var is None:
+            return []
+        name = self.zip_list_var.get().strip()
+        if not name or name == self.NO_ZIP_FILTER_LABEL:
+            return []
+        zip_lists = load_all_zip_lists()
+        return list(zip_lists.get(name, {}).get("zips", []))
+
+    def _open_zip_list_manager(self):
+        """Open a small editor for saved ZIP lists (mirrors delivery_speed_tracker)."""
+        manager = tk.Toplevel(self.window)
+        manager.title("Manage ZIP Lists")
+        manager.transient(self.window)
+        manager.grab_set()
+        manager.resizable(True, True)
+        size_and_center_on_parent(manager, self.window, 520, 480)
+        clamp_minsize(manager, 460, 420)
+
+        outer = ttk.Frame(manager, padding="10")
+        outer.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(outer, text="Saved ZIP list:").pack(anchor=tk.W)
+        select_row = ttk.Frame(outer)
+        select_row.pack(fill=tk.X, pady=(4, 8))
+
+        current_name_var = tk.StringVar()
+        zips_text = tk.Text(outer, height=14, wrap=tk.WORD)
+
+        def load_list_into_text(name):
+            data = load_all_zip_lists().get(name, {})
+            zips = data.get("zips", [])
+            zips_text.delete("1.0", tk.END)
+            zips_text.insert("1.0", "\n".join(zips))
+
+        list_names = sorted(load_all_zip_lists().keys())
+        combo = ttk.Combobox(
+            select_row, textvariable=current_name_var,
+            values=list_names, state="readonly", width=30,
+        )
+        combo.pack(side=tk.LEFT)
+        if list_names:
+            combo.current(0)
+            load_list_into_text(list_names[0])
+
+        combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _e: load_list_into_text(current_name_var.get()),
+        )
+
+        ttk.Label(
+            outer,
+            text="ZIP codes (one per line, or comma / space separated):",
+        ).pack(anchor=tk.W)
+        zips_text.pack(fill=tk.BOTH, expand=True, pady=(4, 8))
+
+        # Validate input and persist via zip_list_manager.save_zip_list.
+        def do_save(as_new):
+            raw = zips_text.get("1.0", tk.END)
+            valid, invalid = parse_zip_list(raw)
+            if invalid:
+                preview = ", ".join(invalid[:6])
+                if len(invalid) > 6:
+                    preview += f" (+{len(invalid) - 6} more)"
+                messagebox.showerror(
+                    "Invalid ZIPs",
+                    f"These tokens are not 5-digit ZIPs: {preview}",
+                    parent=manager,
+                )
+                return
+            if not valid:
+                messagebox.showerror(
+                    "Empty",
+                    "Enter at least one valid 5-digit ZIP code.",
+                    parent=manager,
+                )
+                return
+
+            if as_new or not current_name_var.get().strip():
+                target_name = simpledialog.askstring(
+                    "Save ZIP List",
+                    "Name for this ZIP list:",
+                    initialvalue=current_name_var.get().strip(),
+                    parent=manager,
+                )
+                if not target_name or not target_name.strip():
+                    return
+                target_name = target_name.strip()
+                if target_name in load_all_zip_lists() and not messagebox.askyesno(
+                    "Overwrite",
+                    f"A list named '{target_name}' already exists. Overwrite?",
+                    parent=manager,
+                ):
+                    return
+            else:
+                target_name = current_name_var.get().strip()
+
+            saved, error = save_zip_list(target_name, valid)
+            if not saved:
+                messagebox.showerror(
+                    "Save Failed", error or "Unknown error", parent=manager
+                )
+                return
+
+            messagebox.showinfo(
+                "Saved",
+                f"Saved {len(valid)} ZIP(s) to '{target_name}'.",
+                parent=manager,
+            )
+            new_names = sorted(load_all_zip_lists().keys())
+            combo["values"] = new_names
+            current_name_var.set(target_name)
+            self._refresh_zip_choices()
+
+        buttons = ttk.Frame(outer)
+        buttons.pack(fill=tk.X)
+        ttk.Button(buttons, text="Save",
+                   command=lambda: do_save(False)).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(buttons, text="Save As New...",
+                   command=lambda: do_save(True)).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(buttons, text="Close",
+                   command=manager.destroy).pack(side=tk.RIGHT)
+
+        manager.wait_window()
 
     def _populate_batch_listbox(self, list_names):
         if self.batch_listbox is None:
@@ -993,29 +1409,38 @@ class WalmartPriceTracker:
         self.selected_ip = None
         self.selected_title = None
         self.selected_row_list = None
+        self.selected_zip = ""
 
         if not selected_view:
             self.status_var.set("Select a list.")
             return
 
+        # Determine the ZIP filter from the "View ZIPs" combobox.
+        # - "All ZIPs"     -> show one row per (IP, ZIP-with-data), plus a
+        #                     "Not tracked yet" row for IPs without any data.
+        # - "(No ZIP)"     -> only legacy / zip-agnostic rows (zip_code='').
+        # - "<5-digit ZIP>" -> only rows for that ZIP.
+        view_zip_label = (
+            self.zip_view_var.get().strip() if self.zip_view_var else self.ALL_ZIPS_LABEL
+        )
+
         if selected_view == self.ALL_LISTS:
-            total = 0
+            total_rows = 0
             non_empty = 0
             for list_name in sorted(lists_data.keys()):
                 ips = lists_data.get(list_name, {}).get("ips", [])
                 if ips:
                     non_empty += 1
-                for ip in sorted(ips):
-                    latest = self.store.get_latest_price_record(ip, list_name)
-                    previous = self.store.get_previous_price_record(ip, list_name)
-                    self._insert_result_row(list_name, ip, latest, previous)
-                    total += 1
-            if total == 0:
-                self.status_var.set("All lists are empty.")
+                inserted_for_list = self._insert_rows_for_list(
+                    list_name, ips, view_zip_label
+                )
+                total_rows += inserted_for_list
+            if total_rows == 0:
+                self.status_var.set("All lists are empty (or no rows match the ZIP filter).")
                 return
             self.status_var.set(
-                f"Loaded {total} IP rows across {non_empty} list(s). "
-                "Select a row to view history."
+                f"Loaded {total_rows} row(s) across {non_empty} list(s) "
+                f"(ZIP filter: {view_zip_label}). Select a row to view history."
             )
             return
 
@@ -1024,21 +1449,57 @@ class WalmartPriceTracker:
             self.status_var.set(f"List '{selected_view}' has no IPs.")
             return
 
-        for ip in sorted(ips):
-            latest = self.store.get_latest_price_record(ip, selected_view)
-            previous = self.store.get_previous_price_record(ip, selected_view)
-            self._insert_result_row(selected_view, ip, latest, previous)
-
+        inserted = self._insert_rows_for_list(selected_view, ips, view_zip_label)
         self.status_var.set(
-            f"Loaded {len(ips)} IPs from list '{selected_view}'. "
-            "Select a row to view history."
+            f"Loaded {inserted} row(s) from list '{selected_view}' "
+            f"(ZIP filter: {view_zip_label}). Select a row to view history."
         )
 
-    def _insert_result_row(self, list_name, ip_number, latest, previous):
+    def _insert_rows_for_list(self, list_name, ips, view_zip_label):
+        """
+        Insert one Treeview row per (IP, ZIP) pair matching the ZIP filter.
+
+        Returns the number of rows inserted (excluding pure placeholders).
+        """
+        # Build (ip, zip) work items based on the active ZIP filter.
+        ip_set = set(ips)
+        if view_zip_label == self.ALL_ZIPS_LABEL:
+            # Every (ip, zip) with data, PLUS one placeholder for any IP with no data at all.
+            pairs = [
+                (ip, zip_code)
+                for ip, zip_code in self.store.get_distinct_ip_zip_pairs(list_name)
+                if ip in ip_set
+            ]
+            ips_with_data = {ip for ip, _ in pairs}
+            for ip in sorted(ips):
+                if ip not in ips_with_data:
+                    pairs.append((ip, ""))
+        elif view_zip_label == self.NO_ZIP_VIEW_LABEL:
+            pairs = [(ip, "") for ip in sorted(ips)]
+        else:
+            # Specific 5-digit ZIP selected.
+            pairs = [(ip, view_zip_label) for ip in sorted(ips)]
+
+        # Sort for stable display: by IP, then ZIP (legacy '' first).
+        pairs.sort(key=lambda p: (p[0], p[1]))
+
+        inserted = 0
+        for ip, zip_code in pairs:
+            latest = self.store.get_latest_price_record(ip, list_name, zip_code)
+            previous = self.store.get_previous_price_record(ip, list_name, zip_code)
+            self._insert_result_row(list_name, ip, zip_code, latest, previous)
+            inserted += 1
+        return inserted
+
+    def _insert_result_row(self, list_name, ip_number, zip_code, latest, previous):
+        zip_display = zip_code if zip_code else "-"
         if not latest:
             self.results_tree.insert(
                 "", tk.END,
-                values=(list_name, ip_number, "Not tracked yet", "-", "-", "-", "-", "-"),
+                values=(
+                    list_name, ip_number, zip_display,
+                    "Not tracked yet", "-", "-", "-", "-", "-",
+                ),
                 tags=("no_data",),
             )
             return
@@ -1060,6 +1521,7 @@ class WalmartPriceTracker:
             values=(
                 list_name,
                 ip_number,
+                zip_display,
                 latest["title"],
                 latest.get("seller", ""),
                 f"${current_price:.2f}",
@@ -1111,21 +1573,33 @@ class WalmartPriceTracker:
             )
             return
 
+        zip_codes = self._get_selected_zip_codes()
+        zip_summary = (
+            f" across {len(zip_codes)} ZIP(s)" if zip_codes else " (no ZIP filter)"
+        )
+
         self._stop_flag[0] = False
         self._track_btn.configure(state="disabled")
-        self.status_var.set(f"Starting tracking of {len(ip_entries)} IP(s)…")
+        self.status_var.set(
+            f"Starting tracking of {len(ip_entries)} IP(s){zip_summary}\u2026"
+        )
         self.window.update_idletasks()
 
         def worker():
-            def progress_cb(current, total, list_name, ip_number):
+            def progress_cb(zip_idx, zip_total, ip_idx, ip_total,
+                            current_zip, list_name, ip_number):
                 self._queue.put({
                     "type": "progress",
-                    "current": current, "total": total,
+                    "zip_idx": zip_idx, "zip_total": zip_total,
+                    "ip_idx": ip_idx, "ip_total": ip_total,
+                    "zip_code": current_zip,
                     "list_name": list_name, "ip": ip_number,
                 })
 
             try:
-                results = self.scraper.run_batch(ip_entries, progress_cb, self._stop_flag)
+                results = self.scraper.run_batch(
+                    ip_entries, zip_codes, progress_cb, self._stop_flag,
+                )
                 self._queue.put({"type": "done", "results": results, "empty_lists": empty_lists})
             except Exception as exc:
                 self._queue.put({"type": "error", "code": "FATAL", "message": str(exc)})
@@ -1145,8 +1619,16 @@ class WalmartPriceTracker:
                 msg_type = msg.get("type")
 
                 if msg_type == "progress":
+                    zip_total = msg.get("zip_total", 1)
+                    zip_idx = msg.get("zip_idx", 1)
+                    zip_label = msg.get("zip_code") or "no ZIP"
+                    zip_part = (
+                        f"ZIP {zip_idx}/{zip_total} ({zip_label}) | "
+                        if zip_total > 1 or msg.get("zip_code")
+                        else ""
+                    )
                     self.status_var.set(
-                        f"Tracking {msg['current']}/{msg['total']} | "
+                        f"Tracking {zip_part}IP {msg['ip_idx']}/{msg['ip_total']} | "
                         f"List '{msg['list_name']}' | IP {msg['ip']}"
                     )
                     self.window.update_idletasks()
@@ -1177,33 +1659,67 @@ class WalmartPriceTracker:
         tracked_count = 0
         errors = []
         blocked = False
+        # zip_code -> {"ips": [...], "messages": {error_text -> count}}
+        # We keep the actual error message strings so the dialog can surface
+        # which step of the ZIP switch failed (pill click / sidebar / save / verify).
+        zip_set_failures = {}
 
         for result in results:
             list_name = result.get("list_name", "")
             ip_number = result.get("ip_number", "")
+            zip_code = result.get("zip_code", "") or ""
             error_code = result.get("error_code")
+            err_message = result.get("error") or ""
+            zip_label = f" @ZIP {zip_code}" if zip_code else ""
 
             if error_code == "BLOCKED":
                 blocked = True
-                errors.append(f"[{list_name}] {ip_number}: Bot detection triggered — batch aborted.")
+                errors.append(
+                    f"[{list_name}] {ip_number}{zip_label}: "
+                    "Bot detection triggered \u2014 batch aborted."
+                )
                 break
+            elif error_code == "ZIP_SET_FAILED":
+                # Group by ZIP so the dialog stays readable when many IPs failed
+                # under the same ZIP. Also track distinct underlying error
+                # messages so the user can see *why* the switch failed.
+                bucket = zip_set_failures.setdefault(
+                    zip_code or "(unknown)", {"ips": [], "messages": {}}
+                )
+                bucket["ips"].append(f"[{list_name}] {ip_number}")
+                key = err_message or "Unknown ZIP switch error"
+                bucket["messages"][key] = bucket["messages"].get(key, 0) + 1
             elif result.get("error"):
-                errors.append(f"[{list_name}] {ip_number}: {result['error']}")
+                errors.append(
+                    f"[{list_name}] {ip_number}{zip_label}: {result['error']}"
+                )
             else:
                 self.store.log_price(
                     list_name, ip_number,
                     result["title"], result["seller"], result["price"],
+                    zip_code=zip_code,
                 )
                 tracked_count += 1
 
+        # Re-render results table + View ZIPs combobox (new ZIPs may have been added).
+        self._refresh_zip_choices()
         self._refresh_latest_for_selected_list()
 
-        summary_lines = [f"Tracked {tracked_count} IP(s)."]
+        summary_lines = [f"Tracked {tracked_count} record(s)."]
 
         if empty_lists:
             preview = ", ".join(empty_lists[:5])
             extra = f" (+{len(empty_lists) - 5} more)" if len(empty_lists) > 5 else ""
             summary_lines.append(f"Skipped empty list(s): {preview}{extra}")
+
+        if zip_set_failures:
+            failed_zip_total = sum(len(v["ips"]) for v in zip_set_failures.values())
+            zip_preview = ", ".join(sorted(zip_set_failures.keys())[:5])
+            summary_lines.append(
+                f"ZIP switch failed for {failed_zip_total} IP-attempt(s) "
+                f"across ZIPs: {zip_preview}. "
+                "Those IPs were skipped under their failed ZIP."
+            )
 
         if blocked:
             messagebox.showerror(
@@ -1214,12 +1730,28 @@ class WalmartPriceTracker:
                 + "\n".join(summary_lines),
                 parent=self.window,
             )
-        elif errors:
-            preview = "\n".join(errors[:5])
-            extra = f"\n…and {len(errors) - 5} more." if len(errors) > 5 else ""
+        elif errors or zip_set_failures:
+            details = []
+            if zip_set_failures:
+                details.append("ZIP_SET_FAILED:")
+                for zip_code, bucket in sorted(zip_set_failures.items()):
+                    ip_preview = ", ".join(bucket["ips"][:3])
+                    extra = (
+                        f" (+{len(bucket['ips']) - 3} more)"
+                        if len(bucket["ips"]) > 3 else ""
+                    )
+                    details.append(f"  ZIP {zip_code}: {ip_preview}{extra}")
+                    # Show distinct underlying error messages with their counts.
+                    for msg, count in bucket["messages"].items():
+                        details.append(f"    -> ({count}x) {msg}")
+            if errors:
+                details.append("Errors:")
+                details.extend(f"  {e}" for e in errors[:5])
+                if len(errors) > 5:
+                    details.append(f"  \u2026and {len(errors) - 5} more.")
             messagebox.showwarning(
                 "Tracking Completed with Warnings",
-                "\n".join(summary_lines) + f"\n\nErrors:\n{preview}{extra}",
+                "\n".join(summary_lines) + "\n\n" + "\n".join(details),
                 parent=self.window,
             )
         else:
@@ -1230,7 +1762,7 @@ class WalmartPriceTracker:
             )
 
         self.status_var.set(
-            f"Tracking finished. {tracked_count} IP(s) logged. "
+            f"Tracking finished. {tracked_count} record(s) logged. "
             "Price drops are highlighted in green."
         )
 
@@ -1245,20 +1777,28 @@ class WalmartPriceTracker:
         row = self.results_tree.item(selection[0], "values")
         self.selected_row_list = row[0]
         self.selected_ip = row[1]
-        self.selected_title = row[2]
-        self._load_history_for_ip(self.selected_row_list, self.selected_ip)
+        # Column 2 is the ZIP cell: '-' for the placeholder "no data" case.
+        zip_display = row[2] if len(row) > 2 else "-"
+        self.selected_zip = "" if zip_display in ("", "-") else zip_display
+        # Title is now at index 3 (after list, ip, zip).
+        self.selected_title = row[3] if len(row) > 3 else ""
+        self._load_history_for_ip(
+            self.selected_row_list, self.selected_ip, self.selected_zip
+        )
 
-    def _load_history_for_ip(self, list_name, ip_number):
-        history = self.store.get_price_history(ip_number, list_name)
+    def _load_history_for_ip(self, list_name, ip_number, zip_code=""):
+        history = self.store.get_price_history(ip_number, list_name, zip_code=zip_code)
 
         for item in self.history_tree.get_children():
             self.history_tree.delete(item)
 
         for record in history:
+            zip_value = record.get("zip_code") or ""
             self.history_tree.insert(
                 "", tk.END,
                 values=(
                     record["tracked_at"],
+                    zip_value or "-",
                     f"${float(record['price']):.2f}",
                     record.get("seller", ""),
                     record["title"],
@@ -1270,7 +1810,9 @@ class WalmartPriceTracker:
     def _redraw_chart_for_selection(self):
         if not self.selected_ip or not self.selected_row_list:
             return
-        history = self.store.get_price_history(self.selected_ip, self.selected_row_list)
+        history = self.store.get_price_history(
+            self.selected_ip, self.selected_row_list, zip_code=self.selected_zip
+        )
         self._draw_chart(history)
 
     def _draw_chart(self, history):
@@ -1288,7 +1830,8 @@ class WalmartPriceTracker:
 
         title_text = self.selected_title or history[-1]["title"]
         ip_label = self.selected_ip or ""
-        header = f"{ip_label} | {title_text[:90]}"
+        zip_label = self.selected_zip or "no ZIP"
+        header = f"{ip_label} | ZIP {zip_label} | {title_text[:80]}"
         self.chart_canvas.create_text(
             14, 10, text=header, anchor=tk.NW,
             fill="#222222", font=scaled_font("Arial", 10, "bold"),
@@ -1422,11 +1965,16 @@ class WalmartPriceTracker:
                 parent=self.window,
             )
             return
+        # Filter by the same ZIP the detail view is showing so the export
+        # matches what the user is looking at on screen.
         rows = self.store.get_price_history_rows(
-            list_name=self.selected_row_list, ip_number=self.selected_ip
+            list_name=self.selected_row_list,
+            ip_number=self.selected_ip,
+            zip_code=self.selected_zip,
         )
+        zip_suffix = f"_{self.selected_zip}" if self.selected_zip else ""
         filename = (
-            f"walmart_history_{self.selected_row_list}_{self.selected_ip}.csv"
-            .replace(" ", "_")
+            f"walmart_history_{self.selected_row_list}_{self.selected_ip}"
+            f"{zip_suffix}.csv".replace(" ", "_")
         )
         self._export_history_rows(rows, filename)
